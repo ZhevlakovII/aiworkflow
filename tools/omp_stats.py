@@ -56,20 +56,25 @@ def summarize(rows: list[dict]) -> dict:
         k = r.get("kind", "?")
         by_kind[k] += 1
         events[r.get("event", "?")] += 1
-        u = r.get("usage") or {}
-        tok_in += int(u.get("inputTok") or 0)
-        tok_out += int(u.get("outputTok") or 0)
-        tok_total = max(tok_total, int(u.get("totalTok") or 0))
-        cost += float(u.get("cost") or 0)
-        if isinstance(u.get("durationMs"), (int, float)):
-            durs.append(u["durationMs"])
+        # Токены/cost/длительность берём ТОЛЬКО с omp-usage: agent_end несёт те же messages[].usage
+        # (агрегат хода) → суммирование по всем kind давало двойной счёт и раздутый avgReqMs.
+        if k == "omp-usage":
+            u = r.get("usage") or {}
+            tok_in += int(u.get("inputTok") or 0)
+            tok_out += int(u.get("outputTok") or 0)
+            tok_total = max(tok_total, int(u.get("totalTok") or 0))
+            cost += float(u.get("cost") or 0)
+            if isinstance(u.get("durationMs"), (int, float)):
+                durs.append(u["durationMs"])
         if k == "omp-provider" or r.get("status") is not None:
             providers += 1
             st = r.get("status")
             if st is not None:
                 status[str(st)] += 1
-        if k == "omp-error":
-            ec = r.get("errClass") or "?"
+        # errClass живёт на omp-error (запрос/модель/тул-события) И на omp-tool (фейл исполнения тула).
+        # Считаем ОБА в err_class → headline errors= честный, причины видны в errByClass.
+        if r.get("errClass"):
+            ec = r.get("errClass")
             err_class[ec] += 1
             if ec not in err_samples and r.get("errMsg"):
                 err_samples[ec] = str(r.get("errMsg"))[:100]

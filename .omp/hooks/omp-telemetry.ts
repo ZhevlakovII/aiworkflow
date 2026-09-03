@@ -17,7 +17,7 @@ import * as path from "node:path";
 import { classifyError, errExcerpt } from "../tools/_lib/errclass";
 
 // Кандидат-события (из строк omp-бинаря). Неподдержанные pi.on'ом — guarded, просто не подпишутся.
-const ERROR_EVENTS = ["model_error", "tool_error", "tool_timeout", "tool_call_loop_detected", "request_aborted", "request_canceled", "model_context_window_exceeded", "model_not_loaded"];
+const ERROR_EVENTS = ["model_error", "request_error", "tool_error", "tool_timeout", "tool_aborted", "tool_call_loop_detected", "request_aborted", "request_canceled", "model_context_window_exceeded", "model_not_loaded"];
 const USAGE_EVENTS = ["agent_context_usage", "message_end", "response_item"];
 // provider = фактический HTTP-запрос к модели (deepseek/qwen/…): статус, requestId — ядро для ошибок запроса.
 const PROVIDER_EVENTS = ["before_provider_request", "after_provider_response"];
@@ -37,20 +37,28 @@ function summary(v: unknown, depth = 0): unknown {
   return o;
 }
 
-/** Глубоко ищет числовые usage/cost поля в payload (имена варьируются между фреймами). */
+/** Аккумулирует usage по ФАКТИЧЕСКОЙ схеме OMP (18.x), а не по фаззи-регекспам:
+ *   usage:{ input, output, cacheRead, cacheWrite, totalTokens, cost:{input,output,cacheRead,cacheWrite,total} }
+ *   duration (мс) лежит РЯДОМ с usage на объекте хода (message/assistant-turn).
+ * Ключи голые (`input`/`output`), поэтому читаем только внутри объекта `usage` — иначе tool-call `input`
+ * (аргументы тула) ложно засчитался бы как токены. Собираем со ВСЕХ usage-объектов в payload (agent_end
+ * несёт массив messages[].usage). */
 function digUsage(v: unknown, out: Record<string, number> = {}, depth = 0): Record<string, number> {
-  if (!v || typeof v !== "object" || depth > 4) return out;
-  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-    const key = k.toLowerCase();
-    if (typeof val === "number") {
-      if (/input.*token|prompt.*token/.test(key)) out.inputTok = (out.inputTok || 0) + val;
-      else if (/output.*token|completion.*token/.test(key)) out.outputTok = (out.outputTok || 0) + val;
-      else if (/total.*token/.test(key)) out.totalTok = val;
-      else if (/cache.*read/.test(key)) out.cacheRead = (out.cacheRead || 0) + val;
-      else if (/cost/.test(key)) out.cost = (out.cost || 0) + val;
-      else if (/duration|elapsed|latency/.test(key)) out.durationMs = val;
-    } else if (val && typeof val === "object") digUsage(val, out, depth + 1);
+  if (!v || typeof v !== "object" || depth > 6) return out;
+  const o = v as Record<string, unknown>;
+  const u = o.usage;
+  if (u && typeof u === "object") {
+    const uu = u as Record<string, unknown>;
+    const add = (dst: string, val: unknown) => { if (typeof val === "number") out[dst] = (out[dst] || 0) + val; };
+    add("inputTok", uu.input); add("outputTok", uu.output);
+    add("cacheRead", uu.cacheRead); add("cacheWrite", uu.cacheWrite);
+    if (typeof uu.totalTokens === "number") out.totalTok = Math.max(out.totalTok || 0, uu.totalTokens);
+    const c = uu.cost;                                       // cost стал вложенным объектом (18.x), не числом
+    if (typeof c === "number") out.cost = (out.cost || 0) + c;
+    else if (c && typeof c === "object" && typeof (c as Record<string, unknown>).total === "number") out.cost = (out.cost || 0) + (c as Record<string, number>).total;
+    if (typeof o.duration === "number") out.durationMs = o.duration; // длительность ИМЕННО хода с usage
   }
+  for (const val of Object.values(o)) if (val && typeof val === "object") digUsage(val, out, depth + 1);
   return out;
 }
 
@@ -84,7 +92,7 @@ export default function hook(pi: HookAPI): void {
   };
   const recordShape = (event: string, payload: unknown): void => {
     if (event in seenShapes) return;
-    seenShapes[event] = summary(payload);
+    seenShapes[event] = process.env.OMP_TELEMETRY_DEEP === "1" ? JSON.parse(JSON.stringify(payload, (_k, v) => typeof v === "bigint" ? Number(v) : v)) : summary(payload);
     try { fs.mkdirSync(logsDir, { recursive: true }); fs.writeFileSync(schemaPath, JSON.stringify(seenShapes, null, 2), "utf8"); } catch { /* best-effort */ }
   };
 
@@ -100,8 +108,10 @@ export default function hook(pi: HookAPI): void {
       const kind = classOf(event);
       const rec: Record<string, unknown> = { kind, event };
       if (kind === "omp-error") {
-        const text = digError(payload) || JSON.stringify(summary(payload));
-        rec.errClass = classifyError(text); rec.errMsg = errExcerpt(text);
+        const p = payload as Record<string, unknown> | undefined;
+        rec.tool = p?.toolName ?? p?.tool_name;                                 // если tool_error — сохраним имя
+        const text = [p?.errorMessage, p?.errorText, p?.error].filter((x) => typeof x === "string").join(" ") || digError(payload) || JSON.stringify(summary(payload));
+        rec.errClass = classifyError(text, undefined, event.startsWith("tool") ? "tool" : "request"); rec.errMsg = errExcerpt(text);
       } else if (kind === "omp-provider") {
         // Фактический запрос к модели. status>=400 = ошибка запроса (deepseek 429/400/5xx и т.п.).
         const p = payload as Record<string, unknown> | undefined;
@@ -115,9 +125,15 @@ export default function hook(pi: HookAPI): void {
         const u = digUsage(payload); if (Object.keys(u).length) rec.usage = u; else return; // без чисел — не шумим
       } else if (kind === "omp-tool") {
         const p = payload as Record<string, unknown> | undefined;
-        rec.tool = p?.tool_name ?? p?.name ?? p?.tool; rec.toolCallId = p?.tool_call_id ?? p?.id;
-        const u = digUsage(payload); if (u.durationMs) rec.durationMs = u.durationMs;
-        const err = digError(payload); if (err && /error|fail/i.test(err)) { rec.errClass = classifyError(err); rec.errMsg = errExcerpt(err); }
+        rec.tool = p?.toolName ?? p?.tool_name ?? p?.name ?? p?.tool;          // OMP 18.x: camelCase toolName
+        rec.toolCallId = p?.toolCallId ?? p?.tool_call_id ?? p?.id;
+        if (typeof p?.duration === "number") rec.durationMs = p.duration;      // duration тула — верхний уровень
+        // OMP 18.x tool-фейл: isError/hasError флаг + текст в errorMessage/errorText (не errorId — то число).
+        const failed = p?.isError === true || p?.hasError === true;
+        const errText = [p?.errorMessage, p?.errorText, p?.error].filter((x) => typeof x === "string").join(" ") || digError(payload);
+        if (failed || (errText && /error|fail|denied|refused/i.test(errText))) {
+          rec.isError = true; rec.errClass = classifyError(errText, undefined, "tool"); rec.errMsg = errExcerpt(errText);
+        }
       } else if (kind === "omp-agent") {
         const p = payload as Record<string, unknown> | undefined;
         rec.agentType = p?.agent_type ?? p?.type ?? p?.agent; rec.model = p?.model;

@@ -10,7 +10,9 @@
 export type ErrClass =
   | "auth" | "rate-limit" | "context-length" | "model-not-found" | "bad-request"
   | "server-error" | "network" | "timeout" | "cli-missing" | "killed"
-  | "git" | "config" | "unknown";
+  | "git" | "config"
+  | "fs-permission" | "fs-not-found" | "fs-exists" | "fs-space" | "fs-invalid" | "tool-error"
+  | "unknown";
 
 interface Rule { cls: ErrClass; re: RegExp; }
 
@@ -26,16 +28,31 @@ const RULES: Rule[] = [
   { cls: "bad-request",    re: /\b400\b|bad request|invalid request|malformed|unprocessable|422/i },
 ];
 
-/** Одна метка типа фейла по тексту stderr(+stdout) и exit-code. */
-export function classifyError(text: string, code?: number): ErrClass {
+// Файловые/тул-ошибки исполнения (write/read/mkdir лида и воркеров). Отдельно от request-RULES:
+//   в tool-контексте ENOENT = "нет файла/пути", НЕ "нет CLI". Порядок = приоритет.
+const FS_RULES: Rule[] = [
+  { cls: "fs-permission", re: /\bEACCES\b|\bEPERM\b|permission denied|access is denied|operation not permitted/i },
+  { cls: "fs-exists",     re: /\bEEXIST\b|already exists/i },
+  { cls: "fs-space",      re: /\bENOSPC\b|no space left|disk (is )?full|quota exceeded/i },
+  { cls: "fs-not-found",  re: /\bENOENT\b|no such file or directory|not a directory|\bENOTDIR\b/i },
+  { cls: "fs-invalid",    re: /\bEISDIR\b|\bEINVAL\b|\bENAMETOOLONG\b|\bEROFS\b|read-only file system|invalid argument/i },
+];
+
+/** Одна метка типа фейла по тексту stderr(+stdout) и exit-code.
+ *  ctx="tool" — исполнение тула (write/read/…): файловые ошибки приоритетнее, ENOENT≠cli-missing. */
+export function classifyError(text: string, code?: number, ctx?: "tool" | "request"): ErrClass {
   const t = text || "";
-  if (code === 127 || /command not found|not recognized|no such file or directory|ENOENT/i.test(t)) return "cli-missing";
   if (typeof code === "number" && code < 0) return "killed";           // сигнал (node: -signal)
   if (/SIGKILL|SIGTERM|out of memory|OOM|killed/i.test(t)) return "killed";
+  if (ctx === "tool") {                                                // тул-контекст: fs-семантика раньше cli-missing
+    for (const r of FS_RULES) if (r.re.test(t)) return r.cls;
+  }
+  if (code === 127 || /command not found|not recognized|no such file or directory|ENOENT/i.test(t)) return "cli-missing";
   if (/^fatal:|not a git repository|nothing to commit|git\b.*fail/im.test(t)) return "git";
   for (const r of RULES) if (r.re.test(t)) return r.cls;
+  for (const r of FS_RULES) if (r.re.test(t)) return r.cls;            // fallback: fs-ошибка вне тул-контекста
   if (code === 137) return "killed";
-  return "unknown";
+  return t && /error|fail|exception/i.test(t) ? (ctx === "tool" ? "tool-error" : "unknown") : "unknown";
 }
 
 /** Короткая выжимка причины (первая осмысленная строка, обрезано). Для errMsg в телеметрии/логе. */
