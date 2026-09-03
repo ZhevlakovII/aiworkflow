@@ -27,8 +27,9 @@ $b = irm https://raw.githubusercontent.com/ZhevlakovII/aiworkflow/main/bootstrap
 Уже склонировал репо? Запусти setup напрямую — `bash tools/setup.sh` / `tools/setup.ps1`
 (`--check`/`-Check` = dry-run). Детали, флаги, обновление, machine-специфика — в [INSTALL.md](INSTALL.md).
 
-`omp` и `ast-index` не ставятся пакет-менеджером (нет unattended-рецепта) — setup их детектит и
-печатает хинт; остальное (node/git/codex/java) ставит выбором.
+Ставит выбором всё: `omp` (upstream-инсталлер omp.sh), `ast-index` (winget на Windows /
+GitHub-release бинарь на mac/linux), `node`/`git`/`java` (pkg-mgr), `codex` (npm). Только
+`claude` руками (не npm, ToS-safe) — печатается хинт.
 
 ## Цель
 

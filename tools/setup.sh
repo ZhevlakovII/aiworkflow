@@ -54,11 +54,35 @@ detect_pm() {
 }
 PM="$(detect_pm)"
 
+# astindex_install: download the matching prebuilt from GitHub releases into ~/.local/bin.
+# ast-index ships per-platform tarballs (defendend/Claude-ast-index-search), no brew/apt recipe.
+astindex_install() {
+    local arch os A O tag asset url tmp bin
+    arch="$(uname -m)"; case "$arch" in arm64|aarch64) A=arm64 ;; *) A=x86_64 ;; esac
+    os="$(uname -s)";   case "$os"   in Darwin) O=darwin ;; Linux) O=linux ;; *) echo "  unsupported OS for ast-index auto-install"; return 1 ;; esac
+    tag="$(curl -fsSL https://api.github.com/repos/defendend/Claude-ast-index-search/releases/latest \
+          | grep -o '"tag_name"[^,]*' | head -1 | sed 's/.*"\([^"]*\)"$/\1/')"
+    [ -n "$tag" ] || { echo "  cannot resolve ast-index latest tag"; return 1; }
+    asset="ast-index-${tag}-${O}-${A}.tar.gz"
+    url="https://github.com/defendend/Claude-ast-index-search/releases/download/${tag}/${asset}"
+    tmp="$(mktemp -d)"
+    echo "  downloading $asset ..."
+    curl -fsSL "$url" -o "$tmp/a.tgz" || { echo "  download failed: $url"; return 1; }
+    tar -xzf "$tmp/a.tgz" -C "$tmp" || { echo "  extract failed"; return 1; }
+    bin="$(find "$tmp" -type f -name 'ast-index' | head -1)"
+    [ -n "$bin" ] || { echo "  ast-index binary not found in archive"; return 1; }
+    mkdir -p "$HOME/.local/bin"
+    install -m 0755 "$bin" "$HOME/.local/bin/ast-index"
+    echo "  installed -> ~/.local/bin/ast-index (ensure ~/.local/bin on PATH)"
+}
+
 # pkg_for <cmd> -> prints the concrete install command line for the detected PM (empty = no recipe).
-# omp/ast-index/claude have no unattended package recipe -> hint only (printed in the loop).
+# omp + ast-index are PM-agnostic (upstream installers, need curl). claude has no unattended recipe.
 pkg_for() {
     case "$1" in
-        codex) command -v npm >/dev/null 2>&1 && echo "npm i -g @openai/codex"; return ;;  # needs node/npm, PM-agnostic
+        codex)     command -v npm  >/dev/null 2>&1 && echo "npm i -g @openai/codex"; return ;;              # needs node/npm
+        omp)       command -v curl >/dev/null 2>&1 && echo "curl -fsSL https://omp.sh/install.sh | sh"; return ;;  # upstream installer
+        ast-index) command -v curl >/dev/null 2>&1 && echo "GitHub release prebuilt -> ~/.local/bin (defendend/Claude-ast-index-search)"; return ;;
     esac
     [ -n "$PM" ] || return 0
     case "$1:$PM" in
@@ -132,9 +156,14 @@ for row in "${prereqs[@]}"; do
     fi
 
     if [ "$want" = "1" ]; then
-        echo "            \$ $cmdline"
-        if sh -c "$cmdline"; then echo "            installed."; else echo "            install FAILED (do it manually: $hint)"; fi
-        command -v "$cmd" >/dev/null 2>&1 || { [ "$required" = "1" ] && missing_required="$missing_required $name"; }
+        echo "            installing $name ..."
+        case "$cmd" in
+            ast-index) astindex_install || echo "            install FAILED (do it manually: $hint)" ;;
+            *)         sh -c "$cmdline"  || echo "            install FAILED (do it manually: $hint)" ;;
+        esac
+        # omp + ast-index land in ~/.local/bin; add to PATH so the re-check below sees them this run.
+        export PATH="$HOME/.local/bin:$PATH"; hash -r 2>/dev/null || true
+        if command -v "$cmd" >/dev/null 2>&1; then echo "            installed."; else [ "$required" = "1" ] && missing_required="$missing_required $name"; fi
     elif [ "$required" = "1" ]; then
         missing_required="$missing_required $name"
     fi

@@ -52,20 +52,22 @@ $PM = if (Get-Command winget -ErrorAction SilentlyContinue) { 'winget' }
       else { $null }
 
 # PkgFor <cmd> -> install command line for detected PM ('' = no recipe -> hint only).
-# omp/ast-index/claude have no unattended recipe. codex is PM-agnostic (npm, needs node).
+# omp = upstream installer (PM-agnostic); ast-index = winget; codex = npm (needs node); claude = hint only.
 function PkgFor([string]$cmd) {
     if ($cmd -eq 'codex') {
         if (Get-Command npm -ErrorAction SilentlyContinue) { return 'npm i -g @openai/codex' } else { return '' }
     }
+    if ($cmd -eq 'omp') { return 'irm https://omp.sh/install.ps1 | iex' }   # upstream installer, run via Invoke-Expression
     if (-not $PM) { return '' }
     switch ("$cmd`:$PM") {
-        'node:winget' { 'winget install -e --id OpenJS.NodeJS --accept-source-agreements --accept-package-agreements' }
-        'node:scoop'  { 'scoop install nodejs' }
-        'git:winget'  { 'winget install -e --id Git.Git --accept-source-agreements --accept-package-agreements' }
-        'git:scoop'   { 'scoop install git' }
-        'java:winget' { 'winget install -e --id EclipseAdoptium.Temurin.21.JDK --accept-source-agreements --accept-package-agreements' }
-        'java:scoop'  { 'scoop install temurin21-jdk' }
-        default       { '' }
+        'node:winget'      { 'winget install -e --id OpenJS.NodeJS --accept-source-agreements --accept-package-agreements' }
+        'node:scoop'       { 'scoop install nodejs' }
+        'git:winget'       { 'winget install -e --id Git.Git --accept-source-agreements --accept-package-agreements' }
+        'git:scoop'        { 'scoop install git' }
+        'ast-index:winget' { 'winget install -e --id defendend.ast-index --accept-source-agreements --accept-package-agreements' }
+        'java:winget'      { 'winget install -e --id EclipseAdoptium.Temurin.21.JDK --accept-source-agreements --accept-package-agreements' }
+        'java:scoop'       { 'scoop install temurin21-jdk' }
+        default            { '' }
     }
 }
 
@@ -123,8 +125,13 @@ foreach ($p in $prereqs) {
 
     if ($want) {
         Write-Host ("            > {0}" -f $cmdline) -ForegroundColor Yellow
-        try { & cmd /c $cmdline; Write-Host "            installed." -ForegroundColor Green }
-        catch { Write-Host ("            install FAILED (do it manually: {0})" -f $p.hint) -ForegroundColor Red }
+        try {
+            if ($p.cmd -eq 'omp') { Invoke-Expression (Invoke-RestMethod 'https://omp.sh/install.ps1') }
+            else { & cmd /c $cmdline }
+            Write-Host "            installed." -ForegroundColor Green
+        } catch { Write-Host ("            install FAILED (do it manually: {0})" -f $p.hint) -ForegroundColor Red }
+        # refresh PATH from machine+user env so a freshly installed tool is visible this run
+        $env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User')
         if (-not (Get-Command $p.cmd -ErrorAction SilentlyContinue) -and $p.required) { $missingRequired += $p.name }
     } elseif ($p.required) {
         $missingRequired += $p.name

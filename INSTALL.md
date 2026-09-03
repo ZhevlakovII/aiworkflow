@@ -33,9 +33,11 @@ Installer копирует канон `<repo>/.omp` → глобал и splice'�
 machine-head bootstrap (seed `models.yml`/`modelRoles` из `tools/templates/` **только если
 отсутствуют**) → `install.*` → load-smoke (`omp -p` exit 0).
 
-Prereq ставятся через платформенный пакет-менеджер: **brew** (macOS), **apt/dnf/pacman/zypper**
-(linux), **winget/scoop** (windows), **npm** (codex). Дефолт — спросить y/N на каждый недостающий
-installable. `omp`/`ast-index` не имеют unattended-рецепта → печатается хинт (ставь руками).
+Prereq ставятся: `omp` — upstream-инсталлер (`omp.sh/install.sh` / `install.ps1`); `ast-index` —
+**winget** (`defendend.ast-index`) на Windows, GitHub-release бинарь → `~/.local/bin` на mac/linux;
+`node`/`git`/`java` — платформенный пакет-менеджер (**brew** macOS / **apt/dnf/pacman/zypper** linux /
+**winget/scoop** windows); `codex` — **npm**. Дефолт — спросить y/N на каждый недостающий installable.
+Только `claude` — руками (хинт, не npm; ToS-safe).
 
 **Windows:**
 ```powershell
