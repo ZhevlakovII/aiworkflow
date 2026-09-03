@@ -1,0 +1,16 @@
+# Делегация backend'а по стадиям (ручка выбора модели-исполнителя). Читается _lib/backend.ts.
+# Приоритет override: task-file поле (`design-backend:`/`execute-backend:`) > env
+#   (OMP_BACKEND_DESIGN/OMP_BACKEND_EXECUTE) > этот файл > дефолт "claude".
+#
+# Значения:
+#   claude      сильная модель через `claude -p` (ToS-safe, свой auth). ВАЛИДИРОВАН.
+#   omp         нативная модель из modelRoles/провайдера (Qwen ИЛИ strong-API). built, LIVE-PENDING.
+#   codex       кросс-вендор seam (OpenAI, только execute). load-proven.
+#   omp-fanout  изолированный субагент (только execute). БЕКЛОГ (не реализован).
+#
+# Три варианта:
+#   1) только OMP        design: omp     execute: omp
+#   2) делегация части   design: claude  execute: omp   (любой микс)
+#   3) делегация всего   design: claude  execute: claude   (текущий дефолт)
+design: claude
+execute: claude

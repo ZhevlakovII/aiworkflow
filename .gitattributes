@@ -1,0 +1,2 @@
+# Shell-скрипты — всегда LF (CRLF ломает shebang/команды на linux/macos).
+*.sh text eol=lf

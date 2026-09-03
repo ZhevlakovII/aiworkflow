@@ -1,0 +1,28 @@
+# Claude Code local state
+.claude/settings.local.json
+
+# IDE
+.idea/
+*.iml
+
+# OS
+Thumbs.db
+desktop.ini
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Workflow runtime state (очередь/гейт/телеметрия/логи/дизайны — runtime, не версионим)
+/.workflow/
+
+# Probe/test artifacts
+iso-proof*.txt
+/AIWorkflow/            # артефакт isolated-merge (nested repo-name dir), не должен существовать
+
+# Dev-only каталоги (не в public dist)
+/sandbox/
+/reports/
+
+# Target-полигон (FinManageApp — вложенный репо со своим git, не версионим в AIWorkflow)
+test-project/

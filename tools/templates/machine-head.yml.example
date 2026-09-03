@@ -1,0 +1,15 @@
+# MACHINE-HEAD template — bootstrap seeds this as the head of ~/.omp/agent/config.yml when no
+# modelRoles: block exists yet. NOT product/git canon (installer PRESERVES it, never overwrites).
+# All OMP-native roles = local Qwen INTENTIONALLY (cheap-default, ToS-safe). Strong model enters
+# via `claude -p` subprocess in design_worker/execute_worker — NOT through these roles.
+# These are seed defaults; setup runs tools/setup_roles.ts to (re)bind each role to a model from your
+# REAL models.yml (interactive) and to warn about unset/unknown roles. EDIT here or let the binder do it.
+modelRoles:
+  default:  lm-studio/qwen/qwen3.6-35b-a3b
+  smol:     lm-studio/qwen/qwen3.6-35b-a3b
+  slow:     lm-studio/qwen/qwen3.6-35b-a3b
+  producer: lm-studio/qwen/qwen3.6-35b-a3b
+  critic:   lm-studio/qwen/qwen3.6-35b-a3b
+  explorer: lm-studio/qwen/qwen3.6-35b-a3b
+  advisor:  lm-studio/qwen/qwen3.6-35b-a3b   # pinned Qwen (soft-overlay, P8 Track B) — do NOT flip to strong
+theme:

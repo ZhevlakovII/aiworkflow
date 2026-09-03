@@ -1,0 +1,27 @@
+# Advisor-роутер (OMP-нативный). Приоритеты ревью — в .omp/WATCHDOG.md.
+# Схема (из OMP: applyAdvisorConfigs(advisors, sharedInstructions)):
+#   sharedInstructions — общий блок; advisors[] с {name, enabled, model, tools, instructions, immuneTurns}.
+#
+# ВАЛИДИРОВАНО ЖИВЬЁМ (2026-08-26): OMP читает .omp/WATCHDOG.yml, схема парсится чисто, `model: "@advisor"`
+# резолвится через modelRoles.advisor. `omp -p --advisor` ревьюит КАЖДЫЙ ход, инжектит <advisory> при
+# находке, silent-review на чистом. Работает в headless -p.
+#
+# Модель advisor'а = modelRoles.advisor (~/.omp/agent/config.yml). ЗАФИКСИРОВАНО — локальный Qwen (Pool B,
+# ~free, ToS-safe). РЕШЕНИЕ P8 Track B (2026-08-28): advisor = МЯГКИЙ оверсайт, НЕ рельс. Сильную модель
+# на advisor НЕ ставим — он ревьюит каждый ход, API-модель здесь = дорогой рычаг на не-несущем критике (⊥ INV-9).
+# Настоящий enforcement — детерминир. рельсы (zone-guard/gate_lint/gated_*/misroute-guard), держат L1–L3
+# независимо. Qwen-advisor СЛАБ (в drift-тесте рационализировал bypass) — ловит грубый дрейф дёшево, семантику
+# пропускает; НЕ полагаться на его вердикт как на гейт. Default-off: opt-in `omp --advisor` / `scheduler.py --advisor`.
+sharedInstructions: |
+  Ты — protocol-overseer движка AI Workflow. Read-only, фоновый.
+  Не производишь, не аппрувишь, не мутируешь primary. Стирь через `advise` по severity.
+
+advisors:
+  - name: protocol
+    enabled: true
+    model: "@advisor"
+    tools: [read, grep, glob]
+    immuneTurns: 1             # пропусти 1-й ход (setup/классификация — дрейфа ещё нет)
+    instructions: |
+      Следи за дрейфом протокола (.omp/WATCHDOG.md). При нарушении инварианта — concern/blocker.
+      Особо: lead производит сам / гейт рубер-штампит / обход zone-guard / design-split / фабрикация spec.

@@ -1,0 +1,37 @@
+# zone→tech→executor карта (P9 Track C). Резолв домен-executor'а из пути правки.
+# Механизм: task-file зона (allow-globs) матчится против ключей → tech → домен-агент .omp/agents/<agent>.md.
+# Первый матч по специфичности (длиннее glob раньше). Не матчит → дефолтный executor (flow-роль без домена).
+# Target-специфично (FinManageApp = KMP+Go полигон). При новом target — расширить/вынести per-target.
+map:
+  # --- KMP (Kotlin Multiplatform) ---
+  - glob: "core/**"
+    tech: kmp
+    agent: kmp-developer
+  - glob: "features/**"
+    tech: kmp
+    agent: kmp-developer
+  - glob: "tools/**"
+    tech: kmp
+    agent: kmp-developer
+  - glob: "instances/**"
+    tech: kmp
+    agent: kmp-developer
+  - glob: "root/**"
+    tech: kmp
+    agent: kmp-developer
+  # --- Gradle / build-engineering (convention plugins, version catalog, config objects) ---
+  - glob: "build-logic/**"
+    tech: gradle
+    agent: gradle-developer
+  # --- Go (bot) ---
+  - glob: "bot/**"
+    tech: go
+    agent: go-developer
+
+# Дефолт: путь без домен-матча → generic executor (.omp/agents/executor.md).
+default:
+  agent: executor
+
+# Устаревшее — НЕ трогать (CLAUDE.md: старое приложение, мигрируется).
+deny-domain:
+  - glob: "source/**"
