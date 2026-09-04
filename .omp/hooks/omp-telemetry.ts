@@ -62,6 +62,30 @@ function digUsage(v: unknown, out: Record<string, number> = {}, depth = 0): Reco
   return out;
 }
 
+/** Ловит провал УРОВНЯ СООБЩЕНИЯ: LiteLLM/провайдер оборачивает ошибку в HTTP 200 (транспорт ОК) +
+ *  ставит stopReason:"error" с errorMessage на самом сообщении/model_usage. Такие ошибки невидимы и по
+ *  HTTP-статусу (200), и по usage-числам (нули) → отдельный рекурсивный детект.
+ *  Кейсы (2026-09-04, deepseek-v4-flash через LiteLLM): 400 UnsupportedParamsError reasoning_effort
+ *  (auto-thinking саб-вызов) и "socket connection closed unexpectedly" на длинном стриме. */
+function digStopError(v: unknown, depth = 0): { errored: boolean; msg: string } {
+  if (!v || typeof v !== "object" || depth > 6) return { errored: false, msg: "" };
+  const o = v as Record<string, unknown>;
+  const parts: string[] = [];
+  let errored = false;
+  if (typeof o.stopReason === "string" && o.stopReason.toLowerCase() === "error") {
+    errored = true;
+    if (typeof o.errorMessage === "string") parts.push(o.errorMessage);
+    if (typeof o.errorId === "number") parts.push(`errorId=${o.errorId}`);
+  }
+  for (const val of Object.values(o)) {
+    if (val && typeof val === "object") {
+      const r = digStopError(val, depth + 1);
+      if (r.errored) { errored = true; if (r.msg) parts.push(r.msg); }
+    }
+  }
+  return { errored, msg: parts.filter(Boolean).join(" ") };
+}
+
 /** Ищет текст ошибки в payload (для классификации). */
 function digError(v: unknown, depth = 0): string {
   if (v == null || depth > 4) return "";
@@ -122,7 +146,16 @@ export default function hook(pi: HookAPI): void {
           rec.kind = "omp-error"; rec.errClass = classifyError(`status ${status} ${digError(payload)}`); rec.errMsg = errExcerpt(`HTTP ${status} ${digError(payload)}`);
         } else if (event === "before_provider_request") { return; }  // запрос без исхода — не шумим (ответ запишем)
       } else if (kind === "omp-usage") {
-        const u = digUsage(payload); if (Object.keys(u).length) rec.usage = u; else return; // без чисел — не шумим
+        // message-layer провал (stopReason:error в 200-ответе) ПЕРЕД usage — иначе нулевой usage → return и ошибка теряется.
+        const se = digStopError(payload);
+        if (se.errored) {
+          rec.kind = "omp-error";
+          const text = se.msg || digError(payload) || JSON.stringify(summary(payload));
+          rec.errClass = classifyError(text, undefined, "request"); rec.errMsg = errExcerpt(text);
+          const u = digUsage(payload); if (Object.keys(u).length) rec.usage = u; // usage при наличии — для cost падений
+        } else {
+          const u = digUsage(payload); if (Object.keys(u).length) rec.usage = u; else return; // без чисел — не шумим
+        }
       } else if (kind === "omp-tool") {
         const p = payload as Record<string, unknown> | undefined;
         rec.tool = p?.toolName ?? p?.tool_name ?? p?.name ?? p?.tool;          // OMP 18.x: camelCase toolName

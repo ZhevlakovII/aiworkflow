@@ -24,7 +24,7 @@ const RULES: Rule[] = [
   { cls: "model-not-found",re: /\b404\b|model[_ -]?not[_ -]?found|no such model|unknown model|does not exist|model_not_found/i },
   { cls: "server-error",   re: /\b(500|502|503|504)\b|internal server error|bad gateway|service unavailable|overloaded|server_error|upstream/i },
   { cls: "timeout",        re: /timed?[_ -]?out|timeout|deadline exceeded|ETIMEDOUT|request timeout/i },
-  { cls: "network",        re: /ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|socket hang up|connection (refused|reset|closed)|network error|fetch failed|getaddrinfo/i },
+  { cls: "network",        re: /ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|socket hang up|socket connection .*closed|closed unexpectedly|connection (was )?(refused|reset|closed)|network error|fetch failed|getaddrinfo/i },
   { cls: "bad-request",    re: /\b400\b|bad request|invalid request|malformed|unprocessable|422/i },
 ];
 

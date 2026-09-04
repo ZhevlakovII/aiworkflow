@@ -15,6 +15,9 @@ const cases: [string, number | undefined, string][] = [
   ["404 model not found: deepseek-chat", 1, "model-not-found"],
   ["503 Service Unavailable / upstream overloaded", 1, "server-error"],
   ["connect ECONNREFUSED 127.0.0.1:1234", 1, "network"],
+  // Реальные message-layer провалы LiteLLM/deepseek (2026-09-04), обёрнутые в HTTP 200 (см. omp-telemetry digStopError).
+  ["400 litellm.UnsupportedParamsError: custom_openai does not support parameters: ['reasoning_effort']", 1, "bad-request"],
+  ["The socket connection was closed unexpectedly. pass verbose:true", 1, "network"],
   ["request timed out after 60000ms", 1, "timeout"],
   ["command not found: codex", 127, "cli-missing"],
   ["fatal: not a git repository", 1, "git"],
