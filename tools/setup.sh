@@ -21,18 +21,26 @@
 #   bash tools/setup.sh --default-roles     # bind modelRoles non-interactively (defaults from models.yml)
 set -euo pipefail
 
-CHECK=0; YES=0; SKIP_SMOKE=0; DEFAULT_ROLES=0; INSTALL_LIST=""
-for a in "$@"; do
-    case "$a" in
+CHECK=0; YES=0; SKIP_SMOKE=0; DEFAULT_ROLES=0; INSTALL_LIST=""; FLOW="both"; TARGET=""
+while [ $# -gt 0 ]; do
+    case "$1" in
         --check)           CHECK=1 ;;
         --yes|-y)          YES=1 ;;
         --install-missing) YES=1 ;;            # back-compat: now = "yes to all installable"
-        --install=*)       INSTALL_LIST="${a#--install=}" ;;
+        --install=*)       INSTALL_LIST="${1#--install=}" ;;
         --skip-smoke)      SKIP_SMOKE=1 ;;
         --default-roles)   DEFAULT_ROLES=1 ;;
-        *) echo "unknown arg: $a" >&2; exit 2 ;;
+        --flow=*)          FLOW="${1#--flow=}" ;;
+        --flow)            shift; FLOW="${1:-both}" ;;
+        --target=*)        TARGET="${1#--target=}" ;;
+        --target)          shift; TARGET="${1:-}" ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
+    shift
 done
+case "$FLOW" in omp|claude|both) ;; *) echo "invalid --flow: $FLOW (omp|claude|both)" >&2; exit 2 ;; esac
+DO_OMP=1;    [ "$FLOW" = "claude" ] && DO_OMP=0
+DO_CLAUDE=1; [ "$FLOW" = "omp" ]    && DO_CLAUDE=0
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 REPO="$(dirname "$SCRIPT_DIR")"
@@ -41,6 +49,7 @@ GLOBAL="$HOME/.omp/agent"
 TEMPLATES="$SCRIPT_DIR/templates"
 
 echo "=== AI Workflow setup ==="
+echo "flow:   $FLOW  (omp=$DO_OMP claude=$DO_CLAUDE)"
 echo "canon:  $CANON"
 echo "global: $GLOBAL"
 echo ""
@@ -101,15 +110,24 @@ pkg_for() {
         java:dnf)      echo "sudo dnf install -y java-21-openjdk-devel" ;;
         java:pacman)   echo "sudo pacman -S --noconfirm jdk21-openjdk" ;;
         java:zypper)   echo "sudo zypper install -y java-21-openjdk-devel" ;;
+        python3:brew)   echo "brew install python@3.12" ;;
+        python3:apt-get) echo "sudo apt-get update && sudo apt-get install -y python3" ;;
+        python3:dnf)    echo "sudo dnf install -y python3" ;;
+        python3:pacman) echo "sudo pacman -S --noconfirm python" ;;
+        python3:zypper) echo "sudo zypper install -y python3" ;;
     esac
 }
 
 # --- 1. Prereqs ---
 # fields: name|cmd|verargs|required|hint
+# requiredness by flavor: OMP needs omp+node; Claude Code needs claude CLI. python/git/ast-index both.
+if [ "$DO_CLAUDE" = "1" ]; then claude_req=1; claude_hint="https://claude.ai/code (not npm; ToS-safe worker) - REQUIRED for claude flavor";
+else claude_req=0; claude_hint="https://claude.ai/code (not npm; needed only for claude delegation backend)"; fi
 prereqs=(
-    "OMP (oh-my-pi)|omp|--version|1|https://omp.sh (native binary)"
-    "Node.js >=24|node|--version|1|use nvm or distro pkg"
-    "Claude CLI (opt)|claude|--version|0|https://claude.ai/code (not npm; ToS-safe worker; needed only for claude delegation backend)"
+    "OMP (oh-my-pi)|omp|--version|$DO_OMP|https://omp.sh (native binary)"
+    "Node.js >=24|node|--version|$DO_OMP|use nvm or distro pkg"
+    "Python 3.10+|python3|--version|1|distro python3 (rails/drivers tools/*.py)"
+    "Claude CLI|claude|--version|$claude_req|$claude_hint"
     "git|git|--version|1|apt/brew install git"
     "ast-index|ast-index|version|1|install ast-index CLI (Track A discovery)"
     "Java 21 (opt)|java|-version|0|only for KMP target (gradle test-cmd)"
@@ -178,6 +196,7 @@ if [ -n "$missing_required" ] && [ "$CHECK" = "0" ]; then
     exit 1
 fi
 
+if [ "$DO_OMP" = "1" ]; then
 # --- 2. Machine-head bootstrap (seed ONLY when absent) ---
 modelsDst="$GLOBAL/models.yml"
 cfgDst="$GLOBAL/config.yml"
@@ -235,15 +254,28 @@ echo "--- install.sh ---"
 if [ "$CHECK" = "1" ]; then bash "$SCRIPT_DIR/install.sh" --check; else bash "$SCRIPT_DIR/install.sh"; fi
 echo ""
 
-# --- 4. Load-smoke ---
-if [ "$CHECK" = "1" ]; then echo "CHECK done (nothing written; smoke skipped)."; exit 0; fi
-if [ "$SKIP_SMOKE" = "1" ]; then echo "SETUP done (load-smoke skipped)."; exit 0; fi
-echo "--- load-smoke (omp -p) ---"
-if ! command -v omp >/dev/null 2>&1; then echo "omp absent - smoke skipped."; exit 0; fi
-if omp -p "Reply exactly: LOADED" --yolo >/dev/null 2>&1; then
-    echo "  [ok] omp loaded config+customTools+hooks (exit 0)."
-    echo ""; echo "SETUP done."
-else
-    echo "  [warn] omp smoke non-zero - check config."
-    echo ""; echo "SETUP done with warning."
+# --- 4. Load-smoke (omp) ---
+if [ "$CHECK" = "0" ] && [ "$SKIP_SMOKE" = "0" ]; then
+    echo "--- load-smoke (omp -p) ---"
+    if ! command -v omp >/dev/null 2>&1; then
+        echo "omp absent - smoke skipped."
+    elif omp -p "Reply exactly: LOADED" --yolo >/dev/null 2>&1; then
+        echo "  [ok] omp loaded config+customTools+hooks (exit 0)."
+    else
+        echo "  [warn] omp smoke non-zero - check config."
+    fi
+    echo ""
 fi
+fi  # end if DO_OMP
+
+# --- 5. Claude Code flavor (agents + commands + hooks + settings) ---
+if [ "$DO_CLAUDE" = "1" ]; then
+    echo "--- install-claude.sh ---"
+    cc_args=""
+    [ "$CHECK" = "1" ] && cc_args="$cc_args --check"
+    [ -n "$TARGET" ]   && cc_args="$cc_args --target $TARGET"
+    bash "$SCRIPT_DIR/install-claude.sh" $cc_args
+    echo ""
+fi
+
+if [ "$CHECK" = "1" ]; then echo "CHECK done (nothing written)."; else echo "SETUP done (flow: $FLOW)."; fi

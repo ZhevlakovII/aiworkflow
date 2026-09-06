@@ -1,18 +1,35 @@
-# INSTALL — накат AI Workflow на OMP
+# INSTALL — накат AI Workflow
 
-Продукт распространяется как **глобальный OMP-конфиг** (`~/.omp/agent/`), не junction в каждый репо.
+Один флоу, **две подложки (flavor)** — выбираются флагом `--flow` / `-Flow`:
+
+| flavor | подложка | куда ставится | как включается |
+|--------|----------|---------------|----------------|
+| `omp` | Oh My Pi (нативные тулы/хуки/агенты) | глобал `~/.omp/agent/` | `-Flow omp` |
+| `claude` | Claude Code (субагенты + slash-команды + hooks) | глобал `~/.claude/` (или проект `-Target`) | `-Flow claude` |
+| `both` (**дефолт**) | обе | обе | без флага |
+
+Маппинг OMP→CC и осознанные гэпы: `docs/design/omp-to-claude-code-port-2026-09-06.md`.
+
+**OMP-flavor:** продукт = **глобальный OMP-конфиг** (`~/.omp/agent/`), не junction в каждый репо.
 Installer копирует канон `<repo>/.omp` → глобал и splice'ит продукт-блок в глобальный `config.yml`,
 сохраняя machine-специфику (modelRoles/theme). Проектный `.omp/` несёт только `zonemap.yml`.
+
+**Claude-Code-flavor:** деплоит `.claude/` слой (агенты `.claude/agents/`, slash-команды `.claude/commands/`,
+enforcement-хуки + `settings.json`). Дефолт — глобал `~/.claude/` (доступно в каждом проекте); `-Target <dir>`
+стемпит в `<dir>/.claude` + кладёт `CLAUDE.md` (project-scoped). Пути тулов/хуков переписываются на абсолютные
+пути клона; хуки cwd-aware (берут корень целевого проекта из stdin) → один глобальный экземпляр обслуживает
+любой проект. `settings.json` **мёржится** (hooks + permissions.deny вплайсиваются, чужие ключи сохраняются).
 
 ## 1. Prerequisites
 
 | Компонент | Зачем | Проверка |
 |-----------|------|----------|
-| **OMP (oh-my-pi)** ≥ 18 | рантайм-платформа | `omp --version` |
-| **Node.js** ≥ 24 | нативные TS-тулы (strip-types) | `node --version` |
-| **Claude CLI** (claude.ai/code) | сильная модель воркером (`claude -p`, ToS-safe) | `claude --version` |
-| **git** | контракт-данные, рельсы | `git --version` |
-| **ast-index** | discovery-тулы (Track A) | `ast-index version` |
+| **OMP (oh-my-pi)** ≥ 18 | рантайм-платформа (**flavor omp/both**) | `omp --version` |
+| **Node.js** ≥ 24 | нативные TS-тулы strip-types (**flavor omp/both**) | `node --version` |
+| **Python** ≥ 3.10 | рельсы/драйверы `tools/*.py` (**обе flavor**) | `python --version` |
+| **Claude CLI** (claude.ai/code) | сильная модель воркером (`claude -p`, ToS-safe); **required для flavor claude** | `claude --version` |
+| **git** | контракт-данные, рельсы (обе) | `git --version` |
+| **ast-index** | discovery-тулы / агенты (обе) | `ast-index version` |
 | **PowerShell 5.1+** _или_ **bash** (rsync опц.) | installer (Windows / linux+macos) | — |
 
 Опционально:
@@ -88,7 +105,49 @@ Installer:
 
 Идемпотентно: повторный `-Check` / `--check` покажет `config.yml: in sync`.
 
-## 3. Что деплоится в `~/.omp/agent/`
+### 2.2. Выбор flavor (`--flow` / `-Flow`)
+
+`setup.*` и `bootstrap.*` принимают `--flow omp|claude|both` (дефолт `both`). Flavor `claude`
+пропускает OMP-шаги (machine-head/modelRoles/load-smoke) и требует `claude` CLI вместо `omp`+`node`.
+
+**Windows:**
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/setup.ps1 -Flow claude            # только Claude Code (глобал ~/.claude)
+powershell -ExecutionPolicy Bypass -File tools/setup.ps1 -Flow claude -Target C:\proj  # project-scoped в C:\proj\.claude
+powershell -ExecutionPolicy Bypass -File tools/setup.ps1 -Flow both               # обе (дефолт)
+```
+**Linux / macOS:**
+```bash
+bash tools/setup.sh --flow claude                 # глобал ~/.claude
+bash tools/setup.sh --flow claude --target /proj  # project-scoped /proj/.claude
+```
+
+Только CC-installer (без prereq/setup):
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/install-claude.ps1 -Check           # dry-run (глобал)
+powershell -ExecutionPolicy Bypass -File tools/install-claude.ps1 -Target C:\proj  # project-scoped
+```
+```bash
+bash tools/install-claude.sh --check
+bash tools/install-claude.sh --target /proj
+```
+
+> **Важно:** после установки CC-flavor **перезапусти сессию Claude Code** — `settings.json` hooks
+> подхватываются на старте сессии (агенты/команды видны сразу).
+
+### 2.3. Что деплоит Claude-Code-flavor
+
+```
+~/.claude/agents/     producer, critic, explorer, executor, kmp/go/gradle-developer
+~/.claude/commands/   aiwf-flow/design/execute/gate/commit/push/merge/explore (пути тулов -> клон)
+~/.claude/settings.json  PreToolUse zone-guard + PostToolUse telemetry + permissions.deny (мёрж)
+(project-scoped -Target: то же в <proj>/.claude + CLAUDE.md с lead-протоколом)
+```
+Enforcement: `.claude/hooks/zone-guard.py` (блок .git/.omp write, raw-git→стир к gated-рельсам,
+pipe-to-shell/nc/ssh/rm-rf) + `telemetry.py` (NDJSON → `<proj>/.workflow/telemetry.ndjson`).
+Рельсы/стадии — те же `tools/*.py`, обёрнутые slash-командами.
+
+## 3. Что деплоится в `~/.omp/agent/` (flavor omp)
 
 ```
 tools/          commit/push/merge, design_worker, execute_worker, codex_worker,

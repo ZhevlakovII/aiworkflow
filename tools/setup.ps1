@@ -25,10 +25,15 @@ param(
     [switch]$InstallMissing,     # back-compat alias of -Yes
     [string[]]$Install = @(),    # install only these (by cmd name), no prompt
     [switch]$SkipSmoke,
-    [switch]$DefaultRoles        # bind modelRoles non-interactively (defaults from models.yml)
+    [switch]$DefaultRoles,       # bind modelRoles non-interactively (defaults from models.yml)
+    [ValidateSet('omp','claude','both')]
+    [string]$Flow = 'both',      # which flow flavor to install: OMP / Claude Code / both
+    [string]$Target = ''         # claude flavor: project dir for a project-scoped install (default global ~/.claude)
 )
 $ErrorActionPreference = 'Stop'
 if ($InstallMissing) { $Yes = $true }
+$doOmp    = ($Flow -ne 'claude')
+$doClaude = ($Flow -ne 'omp')
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Repo      = Split-Path -Parent $ScriptDir
@@ -65,6 +70,8 @@ function PkgFor([string]$cmd) {
         'git:winget'       { 'winget install -e --id Git.Git --accept-source-agreements --accept-package-agreements' }
         'git:scoop'        { 'scoop install git' }
         'ast-index:winget' { 'winget install -e --id defendend.ast-index --accept-source-agreements --accept-package-agreements' }
+        'python:winget'    { 'winget install -e --id Python.Python.3.12 --accept-source-agreements --accept-package-agreements' }
+        'python:scoop'     { 'scoop install python' }
         'java:winget'      { 'winget install -e --id EclipseAdoptium.Temurin.21.JDK --accept-source-agreements --accept-package-agreements' }
         'java:scoop'       { 'scoop install temurin21-jdk' }
         default            { '' }
@@ -72,18 +79,23 @@ function PkgFor([string]$cmd) {
 }
 
 Write-Host "=== AI Workflow setup ===" -ForegroundColor Cyan
+Write-Host "flow:   $Flow  (omp=$doOmp claude=$doClaude)" -ForegroundColor Cyan
 Write-Host "canon:  $Canon"
 Write-Host "global: $Global`n"
 
 # --- 1. Prereqs ---
+# requiredness depends on flavor: OMP needs omp+node; Claude Code needs claude CLI. python/git/ast-index both.
+$claudeHint = 'https://claude.ai/code (not npm; ToS-safe worker)'
+$claudeHint += if ($doClaude) { ' - REQUIRED for the claude flow flavor' } else { ' - needed only for claude delegation backend' }
 $prereqs = @(
-    @{ name='OMP (oh-my-pi)'; cmd='omp';       args=@('--version'); required=$true;  hint='https://omp.sh (native x64 binary)' },
-    @{ name='Node.js >=24';   cmd='node';      args=@('--version'); required=$true;  hint='winget install OpenJS.NodeJS  (or nvm)' },
-    @{ name='Claude CLI (opt)'; cmd='claude';  args=@('--version'); required=$false; hint='https://claude.ai/code (not npm; ToS-safe worker; needed only for claude delegation backend)' },
-    @{ name='git';            cmd='git';       args=@('--version'); required=$true;  hint='winget install Git.Git' },
-    @{ name='ast-index';      cmd='ast-index'; args=@('version');   required=$true;  hint='install ast-index CLI (Track A discovery)' },
-    @{ name='Java 21 (opt)';  cmd='java';      args=@('-version');  required=$false; hint='only for KMP target (gradle test-cmd)' },
-    @{ name='codex (opt)';    cmd='codex';     args=@('--version'); required=$false; hint='npm i -g @openai/codex + codex login (cross-vendor seam)' }
+    @{ name='OMP (oh-my-pi)'; cmd='omp';       args=@('--version'); required=$doOmp;    hint='https://omp.sh (native x64 binary)' },
+    @{ name='Node.js >=24';   cmd='node';      args=@('--version'); required=$doOmp;    hint='winget install OpenJS.NodeJS  (or nvm)' },
+    @{ name='Python 3.10+';   cmd='python';    args=@('--version'); required=$true;     hint='winget install Python.Python.3.12 (rails/drivers tools/*.py)' },
+    @{ name='Claude CLI';     cmd='claude';    args=@('--version'); required=$doClaude; hint=$claudeHint },
+    @{ name='git';            cmd='git';       args=@('--version'); required=$true;     hint='winget install Git.Git' },
+    @{ name='ast-index';      cmd='ast-index'; args=@('version');   required=$true;     hint='install ast-index CLI (Track A discovery)' },
+    @{ name='Java 21 (opt)';  cmd='java';      args=@('-version');  required=$false;    hint='only for KMP target (gradle test-cmd)' },
+    @{ name='codex (opt)';    cmd='codex';     args=@('--version'); required=$false;    hint='npm i -g @openai/codex + codex login (cross-vendor seam)' }
 )
 
 $pmLabel = if ($PM) { $PM } else { 'none detected' }
@@ -148,6 +160,7 @@ if ($missingRequired.Count -gt 0 -and -not $Check) {
     exit 1
 }
 
+if ($doOmp) {
 # --- 2. Machine-head bootstrap (seed ONLY when absent; never touch a real head) ---
 $modelsDst = Join-Path $Global 'models.yml'
 $cfgDst    = Join-Path $Global 'config.yml'
@@ -217,31 +230,40 @@ if ($Check) {
 if ($LASTEXITCODE -ne 0) { Write-Host "install.ps1 failed (exit $LASTEXITCODE)" -ForegroundColor Red; exit $LASTEXITCODE }
 Write-Host ""
 
-# --- 4. Load-smoke ---
-if ($Check) {
-    Write-Host "CHECK done (nothing written; smoke skipped)." -ForegroundColor Cyan
-    exit 0
-}
-if ($SkipSmoke) {
-    Write-Host "SETUP done (load-smoke skipped via -SkipSmoke)." -ForegroundColor Green
-    exit 0
-}
-Write-Host "--- load-smoke (omp -p) ---" -ForegroundColor Cyan
-$ompExe = Get-Command omp -ErrorAction SilentlyContinue
-if (-not $ompExe) {
-    Write-Host "omp absent - smoke skipped." -ForegroundColor Yellow
-    exit 0
-}
-try {
-    $smoke = & omp -p "Reply exactly: LOADED" --yolo 2>&1
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "  [ok] omp loaded config+customTools+hooks (exit 0)." -ForegroundColor Green
-        Write-Host "`nSETUP done." -ForegroundColor Green
+# --- 4. Load-smoke (omp) ---
+if (-not $Check -and -not $SkipSmoke) {
+    Write-Host "--- load-smoke (omp -p) ---" -ForegroundColor Cyan
+    $ompExe = Get-Command omp -ErrorAction SilentlyContinue
+    if (-not $ompExe) {
+        Write-Host "omp absent - smoke skipped." -ForegroundColor Yellow
     } else {
-        Write-Host "  [warn] omp smoke exit ${LASTEXITCODE}:" -ForegroundColor Yellow
-        Write-Host ("$smoke" | Select-Object -First 20)
-        Write-Host "`nSETUP done with warning (check config)." -ForegroundColor Yellow
+        try {
+            $smoke = & omp -p "Reply exactly: LOADED" --yolo 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "  [ok] omp loaded config+customTools+hooks (exit 0)." -ForegroundColor Green
+            } else {
+                Write-Host "  [warn] omp smoke exit ${LASTEXITCODE}:" -ForegroundColor Yellow
+                Write-Host ("$smoke" | Select-Object -First 20)
+            }
+        } catch {
+            Write-Host "  [warn] smoke did not run: $_" -ForegroundColor Yellow
+        }
     }
-} catch {
-    Write-Host "  [warn] smoke did not run: $_" -ForegroundColor Yellow
+    Write-Host ""
 }
+}  # end if ($doOmp)
+
+# --- 5. Claude Code flavor (agents + commands + hooks + settings) ---
+if ($doClaude) {
+    $ccInstaller = Join-Path $ScriptDir 'install-claude.ps1'
+    Write-Host "--- install-claude.ps1 ---" -ForegroundColor Cyan
+    $ccArgs = @()
+    if ($Check)   { $ccArgs += '-Check' }
+    if ($Target)  { $ccArgs += '-Target'; $ccArgs += $Target }
+    & powershell -ExecutionPolicy Bypass -File $ccInstaller @ccArgs
+    if ($LASTEXITCODE -ne 0) { Write-Host "install-claude.ps1 failed (exit $LASTEXITCODE)" -ForegroundColor Red; exit $LASTEXITCODE }
+    Write-Host ""
+}
+
+if ($Check) { Write-Host "CHECK done (nothing written)." -ForegroundColor Cyan }
+else        { Write-Host "SETUP done (flow: $Flow)." -ForegroundColor Green }

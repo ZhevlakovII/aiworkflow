@@ -1,0 +1,35 @@
+{
+  "$comment": "CC-порт OMP-флоу (docs/design/omp-to-claude-code-port-2026-09-06.md). Enforcement-слой: hooks + permissions. git-мутации энфорсит zone-guard hook (со стир к gated-рельсам); permissions.deny — security-backstop. Рельсы (python tools/gated_*.py) зовут git через subprocess — hook/deny их НЕ видят (как pi.exec в OMP).",
+  "permissions": {
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(nc:*)",
+      "Bash(ssh:*)",
+      "PowerShell(Remove-Item -Recurse -Force:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/zone-guard.py\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/hooks/telemetry.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

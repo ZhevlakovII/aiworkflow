@@ -1,8 +1,12 @@
-# AI Workflow на OMP
+# AI Workflow
 
-Дисциплинированный SDLC-слой поверх [OMP (oh-my-pi)](https://omp.sh): контракт-ориентированный
-флоу с детерминированными рельсами и лестницей автономии L1→L3. Продукт — не отдельный рантайм,
-а **конфиг + нативные тулы + хуки + роли внутри OMP**.
+Дисциплинированный SDLC-слой: контракт-ориентированный флоу с детерминированными рельсами
+и лестницей автономии L1→L3. Один флоу, **две подложки (flavor)**:
+- **OMP** ([oh-my-pi](https://omp.sh)) — конфиг + нативные тулы + хуки + роли внутри OMP.
+- **Claude Code** — субагенты (`.claude/agents/`) + slash-команды (`.claude/commands/`) +
+  enforcement-хуки. Порт: [`docs/design/omp-to-claude-code-port-2026-09-06.md`](docs/design/omp-to-claude-code-port-2026-09-06.md).
+
+Выбор: `--flow omp|claude|both` (дефолт `both`).
 
 ## Установка (одна команда)
 
@@ -24,8 +28,18 @@ $b = irm https://raw.githubusercontent.com/ZhevlakovII/aiworkflow/main/bootstrap
 & ([scriptblock]::Create($b)) -Yes
 ```
 
+**Только Claude Code flavor:**
+```bash
+curl -fsSL .../bootstrap.sh | bash -s -- --flow claude          # глобал ~/.claude
+```
+```powershell
+& ([scriptblock]::Create($b)) -Flow claude                       # или -Flow claude -Target C:\proj
+```
+После CC-установки перезапусти сессию Claude Code (hooks из `settings.json` — на старте сессии).
+
 Уже склонировал репо? Запусти setup напрямую — `bash tools/setup.sh` / `tools/setup.ps1`
-(`--check`/`-Check` = dry-run). Детали, флаги, обновление, machine-специфика — в [INSTALL.md](INSTALL.md).
+(`--check`/`-Check` = dry-run; `--flow`/`-Flow` = выбор подложки). Детали, флаги, обновление,
+machine-специфика — в [INSTALL.md](INSTALL.md).
 
 Ставит выбором всё: `omp` (upstream-инсталлер omp.sh), `ast-index` (winget на Windows /
 GitHub-release бинарь на mac/linux), `node`/`git`/`java` (pkg-mgr), `codex` (npm). Только

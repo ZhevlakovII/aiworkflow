@@ -6,6 +6,7 @@
 #   $b = irm https://raw.githubusercontent.com/ZhevlakovII/aiworkflow/main/bootstrap.ps1
 #   & ([scriptblock]::Create($b)) -Yes
 #   & ([scriptblock]::Create($b)) -Install node,git
+#   & ([scriptblock]::Create($b)) -Flow claude            # only the Claude Code flavor (~/.claude)
 #
 # Clones (or updates) the public repo into %USERPROFILE%\.aiworkflow, then runs tools/setup.ps1.
 # Override target/source with $env:AIWORKFLOW_HOME / $env:AIWORKFLOW_REPO.
@@ -13,7 +14,10 @@
 param(
     [switch]$Yes,
     [switch]$SkipSmoke,
-    [string[]]$Install = @()
+    [string[]]$Install = @(),
+    [ValidateSet('omp','claude','both')]
+    [string]$Flow = 'both',
+    [string]$Target = ''
 )
 $ErrorActionPreference = 'Stop'
 
@@ -40,4 +44,6 @@ $setupArgs = @()
 if ($Yes)             { $setupArgs += '-Yes' }
 if ($SkipSmoke)       { $setupArgs += '-SkipSmoke' }
 if ($Install.Count)   { $setupArgs += '-Install'; $setupArgs += ($Install -join ',') }
+if ($Flow)            { $setupArgs += '-Flow'; $setupArgs += $Flow }
+if ($Target)          { $setupArgs += '-Target'; $setupArgs += $Target }
 & powershell -ExecutionPolicy Bypass -File (Join-Path $Dest 'tools/setup.ps1') @setupArgs

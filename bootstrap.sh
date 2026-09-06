@@ -4,6 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/ZhevlakovII/aiworkflow/main/bootstrap.sh | bash
 #   curl -fsSL .../bootstrap.sh | bash -s -- --yes          # non-interactive prereq install
 #   curl -fsSL .../bootstrap.sh | bash -s -- --install=node,git
+#   curl -fsSL .../bootstrap.sh | bash -s -- --flow claude  # only the Claude Code flavor (~/.claude)
 #
 # Clones (or updates) the public repo into ~/.aiworkflow, then runs tools/setup.sh, forwarding
 # any flags. Prereq prompts read from /dev/tty, so they still work under the curl|bash pipe.
