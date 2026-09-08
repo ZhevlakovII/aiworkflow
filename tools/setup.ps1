@@ -26,14 +26,15 @@ param(
     [string[]]$Install = @(),    # install only these (by cmd name), no prompt
     [switch]$SkipSmoke,
     [switch]$DefaultRoles,       # bind modelRoles non-interactively (defaults from models.yml)
-    [ValidateSet('omp','claude','both')]
-    [string]$Flow = 'both',      # which flow flavor to install: OMP / Claude Code / both
-    [string]$Target = ''         # claude flavor: project dir for a project-scoped install (default global ~/.claude)
+    [ValidateSet('omp','claude','opencode','all','both')]
+    [string]$Flow = 'all',       # which flow flavor to install: OMP / Claude Code / OpenCode / all (both = alias of all)
+    [string]$Target = ''         # claude/opencode flavor: project dir for a project-scoped install (default global)
 )
 $ErrorActionPreference = 'Stop'
 if ($InstallMissing) { $Yes = $true }
-$doOmp    = ($Flow -ne 'claude')
-$doClaude = ($Flow -ne 'omp')
+$doOmp      = ($Flow -eq 'omp'      -or $Flow -eq 'all' -or $Flow -eq 'both')
+$doClaude   = ($Flow -eq 'claude'   -or $Flow -eq 'all' -or $Flow -eq 'both')
+$doOpencode = ($Flow -eq 'opencode' -or $Flow -eq 'all' -or $Flow -eq 'both')
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Repo      = Split-Path -Parent $ScriptDir
@@ -63,6 +64,9 @@ function PkgFor([string]$cmd) {
         if (Get-Command npm -ErrorAction SilentlyContinue) { return 'npm i -g @openai/codex' } else { return '' }
     }
     if ($cmd -eq 'omp') { return 'irm https://omp.sh/install.ps1 | iex' }   # upstream installer, run via Invoke-Expression
+    if ($cmd -eq 'opencode') {
+        if (Get-Command npm -ErrorAction SilentlyContinue) { return 'npm i -g opencode-ai' } else { return '' }
+    }
     if (-not $PM) { return '' }
     switch ("$cmd`:$PM") {
         'node:winget'      { 'winget install -e --id OpenJS.NodeJS --accept-source-agreements --accept-package-agreements' }
@@ -79,7 +83,7 @@ function PkgFor([string]$cmd) {
 }
 
 Write-Host "=== AI Workflow setup ===" -ForegroundColor Cyan
-Write-Host "flow:   $Flow  (omp=$doOmp claude=$doClaude)" -ForegroundColor Cyan
+Write-Host "flow:   $Flow  (omp=$doOmp claude=$doClaude opencode=$doOpencode)" -ForegroundColor Cyan
 Write-Host "canon:  $Canon"
 Write-Host "global: $Global`n"
 
@@ -92,6 +96,7 @@ $prereqs = @(
     @{ name='Node.js >=24';   cmd='node';      args=@('--version'); required=$doOmp;    hint='winget install OpenJS.NodeJS  (or nvm)' },
     @{ name='Python 3.10+';   cmd='python';    args=@('--version'); required=$true;     hint='winget install Python.Python.3.12 (rails/drivers tools/*.py)' },
     @{ name='Claude CLI';     cmd='claude';    args=@('--version'); required=$doClaude; hint=$claudeHint },
+    @{ name='OpenCode';       cmd='opencode';  args=@('--version'); required=$doOpencode; hint='https://opencode.ai (TUI/Desktop) - REQUIRED for opencode flow flavor' },
     @{ name='git';            cmd='git';       args=@('--version'); required=$true;     hint='winget install Git.Git' },
     @{ name='ast-index';      cmd='ast-index'; args=@('version');   required=$true;     hint='install ast-index CLI (Track A discovery)' },
     @{ name='Java 21 (opt)';  cmd='java';      args=@('-version');  required=$false;    hint='only for KMP target (gradle test-cmd)' },
@@ -262,6 +267,18 @@ if ($doClaude) {
     if ($Target)  { $ccArgs += '-Target'; $ccArgs += $Target }
     & powershell -ExecutionPolicy Bypass -File $ccInstaller @ccArgs
     if ($LASTEXITCODE -ne 0) { Write-Host "install-claude.ps1 failed (exit $LASTEXITCODE)" -ForegroundColor Red; exit $LASTEXITCODE }
+    Write-Host ""
+}
+
+# --- 6. OpenCode flavor (TS tools + plugins + agents + commands + opencode.json) ---
+if ($doOpencode) {
+    $ocInstaller = Join-Path $ScriptDir 'install-opencode.ps1'
+    Write-Host "--- install-opencode.ps1 ---" -ForegroundColor Cyan
+    $ocArgs = @()
+    if ($Check)  { $ocArgs += '-Check' }
+    if ($Target) { $ocArgs += '-Target'; $ocArgs += $Target }
+    & powershell -ExecutionPolicy Bypass -File $ocInstaller @ocArgs
+    if ($LASTEXITCODE -ne 0) { Write-Host "install-opencode.ps1 failed (exit $LASTEXITCODE)" -ForegroundColor Red; exit $LASTEXITCODE }
     Write-Host ""
 }
 

@@ -21,7 +21,7 @@
 #   bash tools/setup.sh --default-roles     # bind modelRoles non-interactively (defaults from models.yml)
 set -euo pipefail
 
-CHECK=0; YES=0; SKIP_SMOKE=0; DEFAULT_ROLES=0; INSTALL_LIST=""; FLOW="both"; TARGET=""
+CHECK=0; YES=0; SKIP_SMOKE=0; DEFAULT_ROLES=0; INSTALL_LIST=""; FLOW="all"; TARGET=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --check)           CHECK=1 ;;
@@ -31,16 +31,21 @@ while [ $# -gt 0 ]; do
         --skip-smoke)      SKIP_SMOKE=1 ;;
         --default-roles)   DEFAULT_ROLES=1 ;;
         --flow=*)          FLOW="${1#--flow=}" ;;
-        --flow)            shift; FLOW="${1:-both}" ;;
+        --flow)            shift; FLOW="${1:-all}" ;;
         --target=*)        TARGET="${1#--target=}" ;;
         --target)          shift; TARGET="${1:-}" ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
     shift
 done
-case "$FLOW" in omp|claude|both) ;; *) echo "invalid --flow: $FLOW (omp|claude|both)" >&2; exit 2 ;; esac
-DO_OMP=1;    [ "$FLOW" = "claude" ] && DO_OMP=0
-DO_CLAUDE=1; [ "$FLOW" = "omp" ]    && DO_CLAUDE=0
+case "$FLOW" in omp|claude|opencode|all|both) ;; *) echo "invalid --flow: $FLOW (omp|claude|opencode|all)" >&2; exit 2 ;; esac
+DO_OMP=1; DO_CLAUDE=1; DO_OPENCODE=1
+case "$FLOW" in
+    omp)      DO_CLAUDE=0; DO_OPENCODE=0 ;;
+    claude)   DO_OMP=0;    DO_OPENCODE=0 ;;
+    opencode) DO_OMP=0;    DO_CLAUDE=0 ;;
+    all|both) ;;                     # all = omp + claude + opencode (both = deprecated alias of all)
+esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 REPO="$(dirname "$SCRIPT_DIR")"
@@ -49,7 +54,7 @@ GLOBAL="$HOME/.omp/agent"
 TEMPLATES="$SCRIPT_DIR/templates"
 
 echo "=== AI Workflow setup ==="
-echo "flow:   $FLOW  (omp=$DO_OMP claude=$DO_CLAUDE)"
+echo "flow:   $FLOW  (omp=$DO_OMP claude=$DO_CLAUDE opencode=$DO_OPENCODE)"
 echo "canon:  $CANON"
 echo "global: $GLOBAL"
 echo ""
@@ -91,6 +96,7 @@ pkg_for() {
     case "$1" in
         codex)     command -v npm  >/dev/null 2>&1 && echo "npm i -g @openai/codex"; return ;;              # needs node/npm
         omp)       command -v curl >/dev/null 2>&1 && echo "curl -fsSL https://omp.sh/install.sh | sh"; return ;;  # upstream installer
+        opencode)  command -v curl >/dev/null 2>&1 && echo "curl -fsSL https://opencode.ai/install | bash"; return ;;  # upstream installer
         ast-index) command -v curl >/dev/null 2>&1 && echo "GitHub release prebuilt -> ~/.local/bin (defendend/Claude-ast-index-search)"; return ;;
     esac
     [ -n "$PM" ] || return 0
@@ -128,6 +134,7 @@ prereqs=(
     "Node.js >=24|node|--version|$DO_OMP|use nvm or distro pkg"
     "Python 3.10+|python3|--version|1|distro python3 (rails/drivers tools/*.py)"
     "Claude CLI|claude|--version|$claude_req|$claude_hint"
+    "OpenCode|opencode|--version|$DO_OPENCODE|https://opencode.ai (TUI/Desktop) - REQUIRED for opencode flavor"
     "git|git|--version|1|apt/brew install git"
     "ast-index|ast-index|version|1|install ast-index CLI (Track A discovery)"
     "Java 21 (opt)|java|-version|0|only for KMP target (gradle test-cmd)"
@@ -275,6 +282,16 @@ if [ "$DO_CLAUDE" = "1" ]; then
     [ "$CHECK" = "1" ] && cc_args="$cc_args --check"
     [ -n "$TARGET" ]   && cc_args="$cc_args --target $TARGET"
     bash "$SCRIPT_DIR/install-claude.sh" $cc_args
+    echo ""
+fi
+
+# --- 6. OpenCode flavor (TS tools + plugins + agents + commands + opencode.json) ---
+if [ "$DO_OPENCODE" = "1" ]; then
+    echo "--- install-opencode.sh ---"
+    oc_args=""
+    [ "$CHECK" = "1" ] && oc_args="$oc_args --check"
+    [ -n "$TARGET" ]   && oc_args="$oc_args --target $TARGET"
+    bash "$SCRIPT_DIR/install-opencode.sh" $oc_args
     echo ""
 fi
 

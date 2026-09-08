@@ -7,6 +7,7 @@
 #   & ([scriptblock]::Create($b)) -Yes
 #   & ([scriptblock]::Create($b)) -Install node,git
 #   & ([scriptblock]::Create($b)) -Flow claude            # only the Claude Code flavor (~/.claude)
+#   & ([scriptblock]::Create($b)) -Flow opencode          # only the OpenCode flavor (~/.config/opencode)
 #
 # Clones (or updates) the public repo into %USERPROFILE%\.aiworkflow, then runs tools/setup.ps1.
 # Override target/source with $env:AIWORKFLOW_HOME / $env:AIWORKFLOW_REPO.
@@ -15,8 +16,8 @@ param(
     [switch]$Yes,
     [switch]$SkipSmoke,
     [string[]]$Install = @(),
-    [ValidateSet('omp','claude','both')]
-    [string]$Flow = 'both',
+    [ValidateSet('omp','claude','opencode','all','both')]
+    [string]$Flow = 'all',
     [string]$Target = ''
 )
 $ErrorActionPreference = 'Stop'

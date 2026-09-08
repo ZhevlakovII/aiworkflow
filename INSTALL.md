@@ -1,14 +1,19 @@
 # INSTALL — накат AI Workflow
 
-Один флоу, **две подложки (flavor)** — выбираются флагом `--flow` / `-Flow`:
+Один флоу, **три подложки (flavor)**. OMP/Claude — через installer-флаг `--flow` / `-Flow`; OpenCode — project-local:
 
 | flavor | подложка | куда ставится | как включается |
 |--------|----------|---------------|----------------|
 | `omp` | Oh My Pi (нативные тулы/хуки/агенты) | глобал `~/.omp/agent/` | `-Flow omp` |
 | `claude` | Claude Code (субагенты + slash-команды + hooks) | глобал `~/.claude/` (или проект `-Target`) | `-Flow claude` |
-| `both` (**дефолт**) | обе | обе | без флага |
+| `opencode` | OpenCode (TS-тулы + плагины + агенты + команды) | глобал `~/.config/opencode/` (или проект `--target`) | `-Flow opencode` / `--flow opencode` |
+| `all` (**дефолт**) | omp + claude + opencode | все три | без флага (`both` — deprecated алиас `all`) |
 
-Маппинг OMP→CC и осознанные гэпы: `docs/design/omp-to-claude-code-port-2026-09-06.md`.
+Маппинг OMP→CC: `docs/design/omp-to-claude-code-port-2026-09-06.md`.
+Маппинг OMP→OpenCode + гэпы: `docs/design/omp-to-opencode-port-2026-09-08.md`.
+
+> **OpenCode-flavor** полностью разведён: `setup.*`/`bootstrap.*` `--flow opencode`, свои `install-opencode.{sh,ps1}`
+> (§2.4). Zero-install альтернатива: `.opencode/` уже в репо, opencode авто-дискаверит при открытии проекта.
 
 **OMP-flavor:** продукт = **глобальный OMP-конфиг** (`~/.omp/agent/`), не junction в каждый репо.
 Installer копирует канон `<repo>/.omp` → глобал и splice'ит продукт-блок в глобальный `config.yml`,
@@ -24,10 +29,11 @@ enforcement-хуки + `settings.json`). Дефолт — глобал `~/.claud
 
 | Компонент | Зачем | Проверка |
 |-----------|------|----------|
-| **OMP (oh-my-pi)** ≥ 18 | рантайм-платформа (**flavor omp/both**) | `omp --version` |
-| **Node.js** ≥ 24 | нативные TS-тулы strip-types (**flavor omp/both**) | `node --version` |
+| **OMP (oh-my-pi)** ≥ 18 | рантайм-платформа (**flavor omp/all**) | `omp --version` |
+| **Node.js** ≥ 24 | нативные TS-тулы strip-types (**flavor omp/all**) | `node --version` |
 | **Python** ≥ 3.10 | рельсы/драйверы `tools/*.py` (**обе flavor**) | `python --version` |
 | **Claude CLI** (claude.ai/code) | сильная модель воркером (`claude -p`, ToS-safe); **required для flavor claude** | `claude --version` |
+| **OpenCode** (opencode.ai, в т.ч. Desktop) | рантайм-платформа (**flavor opencode**); несёт свой Bun | `opencode --version` |
 | **git** | контракт-данные, рельсы (обе) | `git --version` |
 | **ast-index** | discovery-тулы / агенты (обе) | `ast-index version` |
 | **PowerShell 5.1+** _или_ **bash** (rsync опц.) | installer (Windows / linux+macos) | — |
@@ -107,14 +113,16 @@ Installer:
 
 ### 2.2. Выбор flavor (`--flow` / `-Flow`)
 
-`setup.*` и `bootstrap.*` принимают `--flow omp|claude|both` (дефолт `both`). Flavor `claude`
-пропускает OMP-шаги (machine-head/modelRoles/load-smoke) и требует `claude` CLI вместо `omp`+`node`.
+`setup.*` и `bootstrap.*` принимают `--flow omp|claude|opencode|all` (дефолт `all` = omp+claude+opencode;
+`both` — deprecated алиас `all`). Одиночные `claude`/`opencode` пропускают OMP-шаги (machine-head/modelRoles/
+load-smoke): `claude` требует `claude` CLI, `opencode` — `opencode` CLI (вместо `omp`+`node`). `--target <dir>`
+работает и для claude, и для opencode. `all` требует prereq всех трёх (omp+node+claude+opencode).
 
 **Windows:**
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools/setup.ps1 -Flow claude            # только Claude Code (глобал ~/.claude)
 powershell -ExecutionPolicy Bypass -File tools/setup.ps1 -Flow claude -Target C:\proj  # project-scoped в C:\proj\.claude
-powershell -ExecutionPolicy Bypass -File tools/setup.ps1 -Flow both               # обе (дефолт)
+powershell -ExecutionPolicy Bypass -File tools/setup.ps1 -Flow all                # все три (дефолт)
 ```
 **Linux / macOS:**
 ```bash
@@ -146,6 +154,59 @@ bash tools/install-claude.sh --target /proj
 Enforcement: `.claude/hooks/zone-guard.py` (блок .git/.omp write, raw-git→стир к gated-рельсам,
 pipe-to-shell/nc/ssh/rm-rf) + `telemetry.py` (NDJSON → `<proj>/.workflow/telemetry.ndjson`).
 Рельсы/стадии — те же `tools/*.py`, обёрнутые slash-командами.
+
+### 2.4. OpenCode-flavor (`install-opencode.{sh,ps1}` / `--flow opencode`)
+
+Installer-твины `install-claude.*` для OpenCode. Дефолт-цель — global `~/.config/opencode` (или `$XDG_CONFIG_HOME/opencode`); `--target <dir>` — project-scoped `<dir>/.opencode` + `<dir>/opencode.json`.
+
+**Через all-in-one (prereq-детект → install):**
+```bash
+bash tools/setup.sh --flow opencode                      # global; --target /proj — project-scoped
+```
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/setup.ps1 -Flow opencode            # global
+powershell -ExecutionPolicy Bypass -File tools/setup.ps1 -Flow opencode -Target C:\proj
+```
+**Одной командой с нуля:** `bootstrap.sh --flow opencode` / `bootstrap.ps1 -Flow opencode` (см. README).
+
+**Только installer (без prereq/setup):**
+```bash
+bash tools/install-opencode.sh --check               # dry-run (ничего не пишет)
+bash tools/install-opencode.sh                        # global ~/.config/opencode
+bash tools/install-opencode.sh --target /path/proj    # project-scoped <proj>/.opencode
+```
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/install-opencode.ps1 -Check
+powershell -ExecutionPolicy Bypass -File tools/install-opencode.ps1 -Target C:\proj
+```
+
+Отличия от claude-installer: TS-тулы self-contained (relative `../lib`-импорты + PATH-бинари git/gh/claude/opencode/codex/ast-index) → **path-rewrite не нужен**. `opencode.json` **мёржится** (permission + instructions вплайсиваются, чужие ключи юзера сохраняются) через python. Копирование `agents/` — **overlay** (без удаления чужих агентов в global-дире); `tools/plugins/lib/commands` — полный mirror. Идемпотентно (`--check` → `in sync`).
+
+**Zero-install альтернатива:** ничего не запускать — `.opencode/` версионируется в репо, opencode авто-дискаверит при открытии проекта (project-local wins над global per-имя).
+
+> **cwd-caveat (global):** driver-тулы (`design_worker`/`execute_worker`) читают `.opencode/{agents,delegation.yml,zonemap.yml}` относительно **cwd проекта**. Для полного флоу при global-инсталле держи проектный `.opencode/` ИЛИ ставь project-scoped (`--target`) — тогда всё резолвится cwd-relative, робастно.
+
+Деплоит:
+```
+.opencode/tools/      gated_commit/push/merge, design_worker, execute_worker, codex_worker,
+                      gate_lint, archive_spec, plan, synthesize, code_search, outline, callers (+ lib/)
+.opencode/plugins/    zone-guard (tool.execute.before, throw-deny) + telemetry (tool.execute.after)
+.opencode/agents/     producer, critic, explorer, executor, kmp/go/gradle-developer + primary `aiwf`
+.opencode/commands/   aiwf-flow/design/execute/gate/commit/push/merge/explore
+.opencode/{AGENTS.md,delegation.yml,zonemap.yml}  + root opencode.json (permission + instructions)
+```
+Enforcement: plugin `zone-guard` (throw-deny: .git/.omp/.opencode write, raw-git→стир к рельсам,
+pipe-to-shell/nc/ssh/rm-rf) + `telemetry`. Рельсы зовут git через Bun `$` (минуют plugin — аналог pi.exec).
+
+**Prereq:** `opencode` CLI (несёт свой Bun), `git`, `ast-index` (discovery). Опц. `claude`/`codex` CLI —
+только если backend делегации переставлен на них (§9). Дефолтный backend flavor'а — `opencode` (нативный движок).
+
+**Запуск:** флоу **без команды** — дефолтный `build`-агент следует always-on `AGENTS.md` (просто пиши задачу;
+trivial-escape для чистых вопросов). Строгий lead — Tab → primary `aiwf`. Явные алиасы — `/aiwf-*` команды.
+
+> **Не прогнано на живом OpenCode** (порт собран на хосте без opencode) — сверить API-caveats
+> (сигнатура `tool.execute.before`, флаги `opencode run --agent`, plural-dirs, глобальная загрузка
+> `AGENTS.md`) в порт-доке §Caveats перед проданкшн-использованием.
 
 ## 3. Что деплоится в `~/.omp/agent/` (flavor omp)
 
@@ -252,6 +313,11 @@ execute: claude
 > `pi.pi.BUILTIN_TOOLS.task`/`TaskParams.isolated`, но контракт вызова не сверён → при флаге пробуется
 > native, при сбое fallback на Path A; диагностика формы в `.workflow/fanout-native-diag.json`. Требует
 > живой yolo-валидации.
+
+**OpenCode-flavor delegation** — отдельная: `.opencode/delegation.yml` (не `.omp/`), env `AIWF_BACKEND_DESIGN`/
+`AIWF_BACKEND_EXECUTE` (не `OMP_BACKEND_*`). Backend'ы: `opencode` (нативный движок, `opencode run --agent`, **дефолт
+flavor'а**) | `claude` | `codex` | `opencode-fanout` (git-worktree Path A; native Path B не портирован). Приоритет
+override тот же (task-file поле > env > delegation.yml > code-дефолт `claude`).
 
 ## 10. Телеметрия и анализ
 

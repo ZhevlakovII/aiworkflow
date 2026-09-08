@@ -1,12 +1,18 @@
 # AI Workflow
 
 Дисциплинированный SDLC-слой: контракт-ориентированный флоу с детерминированными рельсами
-и лестницей автономии L1→L3. Один флоу, **две подложки (flavor)**:
+и лестницей автономии L1→L3. Один флоу, **три подложки (flavor)**:
 - **OMP** ([oh-my-pi](https://omp.sh)) — конфиг + нативные тулы + хуки + роли внутри OMP.
 - **Claude Code** — субагенты (`.claude/agents/`) + slash-команды (`.claude/commands/`) +
   enforcement-хуки. Порт: [`docs/design/omp-to-claude-code-port-2026-09-06.md`](docs/design/omp-to-claude-code-port-2026-09-06.md).
+- **OpenCode** ([sst/opencode](https://opencode.ai), в т.ч. Desktop) — TS-нативные тулы (`.opencode/tools/`) +
+  плагины (`.opencode/plugins/`, `tool.execute.before/after`) + субагенты + slash-команды. Ближе к OMP-оригиналу
+  (оба TS/Bun-native). Порт: [`docs/design/omp-to-opencode-port-2026-09-08.md`](docs/design/omp-to-opencode-port-2026-09-08.md).
 
-Выбор: `--flow omp|claude|both` (дефолт `both`).
+Выбор инсталлером: `--flow omp|claude|opencode|all` (дефолт `all` = omp+claude+opencode; `both` — deprecated
+алиас `all`). Все три ставятся одинаково (setup/bootstrap/свой installer); opencode-flavor умеет и zero-install
+(`.opencode/` версионится в репо → opencode авто-дискаверит при открытии проекта). У opencode флоу идёт **без
+команды** (always-on `AGENTS.md` governs дефолтный `build`-агент) или явными `/aiwf-*` командами.
 
 ## Установка (одна команда)
 
@@ -36,6 +42,15 @@ curl -fsSL .../bootstrap.sh | bash -s -- --flow claude          # глобал ~
 & ([scriptblock]::Create($b)) -Flow claude                       # или -Flow claude -Target C:\proj
 ```
 После CC-установки перезапусти сессию Claude Code (hooks из `settings.json` — на старте сессии).
+
+**Только OpenCode flavor:**
+```bash
+curl -fsSL .../bootstrap.sh | bash -s -- --flow opencode         # глобал ~/.config/opencode
+```
+```powershell
+& ([scriptblock]::Create($b)) -Flow opencode                     # или -Flow opencode -Target C:\proj
+```
+Открой проект в OpenCode (TUI/Desktop) — флоу идёт без команды (`AGENTS.md` → `build`-агент) или через `/aiwf-*`.
 
 Уже склонировал репо? Запусти setup напрямую — `bash tools/setup.sh` / `tools/setup.ps1`
 (`--check`/`-Check` = dry-run; `--flow`/`-Flow` = выбор подложки). Детали, флаги, обновление,
