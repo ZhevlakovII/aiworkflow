@@ -1,0 +1,21 @@
+# canon/models-matrix.yml — тир1 (writable canon), структурный скелет (non-goal-наполнение)
+#
+# Тир: 1 — canon/ (writable, только данные). AD-canon-dir-layout,
+# AD-three-tier-partition, AD-manifest-structural-place (структурное место
+# по тому же принципу — завести адрес, не наполнять).
+# Назначение: role -> tier + recommend (какая модель/tier рекомендована для
+# роли). Структурное место под план п.4 ("Content (modelRoles/endpoints)
+# вне периметра фундамента -> п.4", см. D7 в плане).
+#
+# ЭТОТ ФАЙЛ НЕ НАПОЛНЯЕТСЯ в рамках текущего периметра (Ф0-Ф7 фундамента).
+# Наполнение — зависимая работа вне текущего плана (см. план, "п.4" ссылки
+# у D6/D7).
+#
+# Schema (пример, НЕ активная конфигурация):
+#
+# roles:
+#   - role: executor
+#     tier: sonnet
+#     recommend: null
+
+roles: []

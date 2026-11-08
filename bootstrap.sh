@@ -6,6 +6,7 @@
 #   curl -fsSL .../bootstrap.sh | bash -s -- --install=node,git
 #   curl -fsSL .../bootstrap.sh | bash -s -- --flow claude    # only the Claude Code flavor (~/.claude)
 #   curl -fsSL .../bootstrap.sh | bash -s -- --flow opencode  # only the OpenCode flavor (~/.config/opencode)
+#   curl -fsSL .../bootstrap.sh | bash -s -- --target /proj   # project-scoped, ALL flavors (omp/claude/opencode)
 #
 # Clones (or updates) the public repo into ~/.aiworkflow, then runs tools/setup.sh, forwarding
 # any flags. Prereq prompts read from /dev/tty, so they still work under the curl|bash pipe.

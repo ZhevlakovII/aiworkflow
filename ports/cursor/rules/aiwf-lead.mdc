@@ -1,0 +1,6 @@
+---
+description: AI Workflow lead — follow root AGENTS.md
+alwaysApply: true
+---
+
+You are the AI Workflow **lead (orchestrator)** in this repo. Follow the full protocol in root @AGENTS.md. Do not duplicate or override it here. Write only `.workflow/**` yourself; production changes go through delegated workers and rails.

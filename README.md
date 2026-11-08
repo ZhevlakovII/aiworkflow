@@ -4,14 +4,15 @@
 и лестницей автономии L1→L3. Один флоу, **три подложки (flavor)**:
 - **OMP** ([oh-my-pi](https://omp.sh)) — конфиг + нативные тулы + хуки + роли внутри OMP.
 - **Claude Code** — субагенты (`.claude/agents/`) + slash-команды (`.claude/commands/`) +
-  enforcement-хуки. Порт: [`docs/design/omp-to-claude-code-port-2026-09-06.md`](docs/design/omp-to-claude-code-port-2026-09-06.md).
+  enforcement-хуки. Port source: `ports/claude/` → installer stamps consumer `.<client>/`.
 - **OpenCode** ([sst/opencode](https://opencode.ai), в т.ч. Desktop) — TS-нативные тулы (`.opencode/tools/`) +
   плагины (`.opencode/plugins/`, `tool.execute.before/after`) + субагенты + slash-команды. Ближе к OMP-оригиналу
-  (оба TS/Bun-native). Порт: [`docs/design/omp-to-opencode-port-2026-09-08.md`](docs/design/omp-to-opencode-port-2026-09-08.md).
+  (оба TS/Bun-native). Port source: `ports/opencode/` (+ `opencode.json`) → installer stamps consumer `.opencode/` + root `opencode.json`.
+
+Карта / статус / ключи (RU): [`docs/map.md`](docs/map.md) · [`docs/status.md`](docs/status.md) · [`docs/keys.md`](docs/keys.md). EN → [`docs/en/`](docs/en/). Исторические design/research остаются в локальном (private) каноне, не в публичном installable-дереве.
 
 Выбор инсталлером: `--flow omp|claude|opencode|all` (дефолт `all` = omp+claude+opencode; `both` — deprecated
-алиас `all`). Все три ставятся одинаково (setup/bootstrap/свой installer); opencode-flavor умеет и zero-install
-(`.opencode/` версионится в репо → opencode авто-дискаверит при открытии проекта). У opencode флоу идёт **без
+алиас `all`). Все три ставятся одинаково (setup/bootstrap/свой installer). В этом репо **нет** live dogfood `.<client>/` — installer SRC под `ports/` (в т.ч. `ports/cursor/`, `ports/omp/`); installers stamp consumer `.<client>/`. У opencode флоу идёт **без
 команды** (always-on `AGENTS.md` governs дефолтный `build`-агент) или явными `/aiwf-*` командами.
 
 ## Установка (одна команда)
@@ -85,12 +86,11 @@ GitHub-release бинарь на mac/linux), `node`/`git`/`java` (pkg-mgr), `cod
 | `gated_commit` | стейдж → zone-check путей против allow/deny зоны task-file → коммит только на зелёном. Raw `git commit` заблокирован. |
 | `gated_push` | protected-branch / clean-tree / commits-ahead гарды → push feature-ветки (+опц. PR через `gh`). L2-рельс. |
 | `gated_merge` | capability-probe (green-gate/clean-rebase/forced-critic/rollback) → merge `--no-ff` → свежий gate на слитом дереве → откат на красном. L3-рельс. |
-| `design_worker` | вся design-стадия (producer→gate_lint→bounce-retry→critic→ledger→commit) детерминированно; `claude -p` через `pi.exec`. |
-| `execute_worker` | execute-стадия: резолв домен-агента (zonemap) → воркер пишет код+тест → zone-check → test-cmd → **FR↔test трассировка** → commit. |
-| `codex_worker` | execute через `codex exec` как кросс-вендор harness-subprocess воркер (dsh-seam). Требует установленного codex CLI. |
-| `archive_spec` | delta→archive живая спека: merge SP/FR из change-spec в канон `docs/spec/<capability>.md` по id (ADD/SKIP/COLLISION), опц. claude-reconcile + cross-ID семантик-dedupe. |
+| `design_session` | in-session design (begin→gate→critic-record→lock); lead спавнит native producer/critic; judge+gateLint. |
+| `execute_session` | in-session execute (begin→check→done); zonemap resolve + active-zone; lead спавнит native executor/domain. |
+| `archive_spec` | delta→archive живая спека: merge SP/FR из change-spec в канон `docs/spec/<capability>.md` по id (ADD/SKIP/COLLISION), опц. reconcile + cross-ID семантик-dedupe. |
 | `code_search` / `outline` / `callers` | discovery поверх `ast-index` (дефолт вместо mass-grep). |
-| `plan` / `synthesize` | one-shot синтез из спек (`claude -p`), вне автономного контура. |
+| `plan` / `synthesize` | one-shot синтез из спек (`omp -p`), вне автономного контура. |
 
 ### Хуки
 
@@ -123,9 +123,9 @@ omp                       # lead держит контракт и гейтит, 
 ### Автономная очередь (L1)
 ```bash
 # задачи — .workflow/tasks/<id>.md (иммутабельны), статус в .workflow/queue-state.json
-python tools/queue_rpc.py --cwd <проект> [--tasks-dir DIR] [--state FILE] [--timeout SEC]
+node core/src/ops/queue-rpc-cli.ts --cwd <проект> [--tasks-dir DIR] [--state FILE] [--timeout SEC]
 ```
-Один персистентный `omp --mode=rpc` дренирует очередь: dispatch → `execute_worker`/`design_worker`
+Один персистентный `omp --mode=rpc` дренирует очередь: dispatch → `execute_session`/`design_session`
 → рельсы → verdict → next → autotrigger archive. Lead только диспатчит.
 
 ### Формат task-file
@@ -135,7 +135,7 @@ id: money-abs-2026-08-31
 stage: execute            # execute | design*
 class: feature
 capability: money         # канон живой спеки docs/spec/<capability>.md
-spec: docs/design/<id>-spec.md
+spec: docs/design/<id>-spec.md   # consumer design artifacts (not this product's live docs/)
 allow: ["core/money/**"]   # зона (glob) — enforced на коммите
 deny: ["source/**"]
 test-cmd: "./gradlew :core:money:testDebugUnitTest"
@@ -158,7 +158,7 @@ statement: WHEN abs is called on a negative Money THE SYSTEM SHALL return its po
 
 См. [INSTALL.md](INSTALL.md). All-in-one (prereq-детект → machine-head bootstrap → install → load-smoke):
 `powershell -File tools/setup.ps1` (Windows) / `bash tools/setup.sh` (linux/macos). Только копирование
-канона — `tools/install.ps1` / `tools/install.sh`. Канон `.omp` → глобальный `~/.omp/agent` (продукт);
+канона — `tools/install.ps1` / `tools/install.sh`. Канон `ports/omp` → глобальный `~/.omp/agent` (продукт);
 проектный `.omp/` несёт только `zonemap.yml`.
 
 ## Тесты
@@ -168,17 +168,16 @@ python tools/tests/test_fr_trace.py        # FR↔test трассировка (p
 python tools/tests/test_archive_spec.py    # archive merge (add/skip/collision)
 python tools/tests/test_archive_parity.py  # archive TS↔python паритет
 python tools/tests/test_dedupe_unit.py     # cross-ID dedupe (детерминир. часть)
-node .omp/tools/_lib/zonemap.test.ts        # zone→домен-агент резолвер
-node .omp/tools/_lib/backend.test.ts        # backend-резолв + runWorker exec-формы + fanout dispatch
-node .omp/tools/_lib/backend.fanout.test.ts # omp-fanout Path A (git-worktree изолятор, реальный temp-git)
+node ports/omp/tools/_lib/zonemap.test.ts        # zone→домен-агент резолвер
+node ports/omp/tools/_lib/backend.test.ts        # backend-резолв + runWorker exec-формы + fanout dispatch
+node ports/omp/tools/_lib/backend.fanout.test.ts # omp-fanout Path A (git-worktree изолятор, реальный temp-git)
 ```
 
 ## Архитектура (кратко)
 
 - **Топология:** единая точка на OMP (control point + orchestration runtime), не N-адаптеров.
-- **Слой продукта:** глобальный `~/.omp/agent` (тулы/хуки/роли/RULES/AGENTS/bash.patterns).
+- **Слой продукта:** `canon/` + `core/` + `tools/` + `ports/` (SRC); после install — consumer `.<client>/`.
 - **Проектный слой:** тонкий `<repo>/.omp` (`zonemap.yml`), мёржится OMP'ом поверх глобала per-key.
-- **Контракт-данные:** `.workflow/tasks` (задачи) + `docs/design` (spec/ADR) + `docs/spec` (живой канон)
-  + ledger — plain-файлы, harness-agnostic.
+- **Контракт-данные:** `.workflow/tasks` + consumer design/spec artifacts + ledger — plain-файлы, harness-agnostic.
 
-Полный роадмап и провенанс решений: `docs/design/omp-orchestration-roadmap-2026-08-24.md`.
+Карта репо и ключи (RU): [`docs/map.md`](docs/map.md), [`docs/keys.md`](docs/keys.md). EN → [`docs/en/`](docs/en/). Исторические design/research — только в локальном (private) каноне.

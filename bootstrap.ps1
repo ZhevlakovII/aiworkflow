@@ -8,6 +8,7 @@
 #   & ([scriptblock]::Create($b)) -Install node,git
 #   & ([scriptblock]::Create($b)) -Flow claude            # only the Claude Code flavor (~/.claude)
 #   & ([scriptblock]::Create($b)) -Flow opencode          # only the OpenCode flavor (~/.config/opencode)
+#   & ([scriptblock]::Create($b)) -Target C:\proj         # project-scoped, ALL flavors (omp/claude/opencode)
 #
 # Clones (or updates) the public repo into %USERPROFILE%\.aiworkflow, then runs tools/setup.ps1.
 # Override target/source with $env:AIWORKFLOW_HOME / $env:AIWORKFLOW_REPO.
@@ -18,7 +19,8 @@ param(
     [string[]]$Install = @(),
     [ValidateSet('omp','claude','opencode','all','both')]
     [string]$Flow = 'all',
-    [string]$Target = ''
+    [string]$Target = '',
+    [switch]$KeepAgents
 )
 $ErrorActionPreference = 'Stop'
 
@@ -47,4 +49,5 @@ if ($SkipSmoke)       { $setupArgs += '-SkipSmoke' }
 if ($Install.Count)   { $setupArgs += '-Install'; $setupArgs += ($Install -join ',') }
 if ($Flow)            { $setupArgs += '-Flow'; $setupArgs += $Flow }
 if ($Target)          { $setupArgs += '-Target'; $setupArgs += $Target }
+if ($KeepAgents)      { $setupArgs += '-KeepAgents' }
 & powershell -ExecutionPolicy Bypass -File (Join-Path $Dest 'tools/setup.ps1') @setupArgs

@@ -1,0 +1,11 @@
+# Делегация backend'а по стадиям (ручка выбора модели-исполнителя). Читается lib/backend.ts.
+# Приоритет override: task-file поле (`design-backend:`/`execute-backend:`) > env
+#   (AIWF_BACKEND_DESIGN/AIWF_BACKEND_EXECUTE) > этот файл > дефолт "opencode".
+#
+# Значения (B4, зеркало OMP omp-only):
+#   opencode         нативный движок хоста через `opencode run --agent <role>` (замена OMP "omp").
+#   opencode-fanout  изолированный воркер (git-worktree Path A, только execute; inner = opencode).
+#
+# claude / codex — retired (B4).
+design: opencode
+execute: opencode

@@ -1,0 +1,9 @@
+# zone→tech→executor карта (P9 Track C). Резолв домен-executor'а из пути правки.
+# Механизм: task-file зона (allow-globs) матчится против ключей → tech → домен-агент .omp/agents/<agent>.md.
+# Первый матч по специфичности (длиннее glob раньше). Не матчит → дефолтный executor (flow-роль без домена).
+# Пустой каркас (A4): наполнение — строго в проекте (см. <project>/.omp/zonemap.yml). Этот
+# репо (фреймворк) доменных зон не имеет → всегда executor-fallback. Формат/схема — canon/zonemap.yml.
+
+map: []
+default: null
+deny-domain: []

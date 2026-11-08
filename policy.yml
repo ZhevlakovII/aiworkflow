@@ -1,0 +1,64 @@
+# policy.yml — governance-политика (T5a AD-policy-as-data, trusted git-tracked source).
+#
+# Живой enforcement AIWorkflow. Читается TS command-hook (.claude PreToolUse) через
+# core/src/wiring/policy-source.ts (loadPolicyFile → buildPolicy). НЕ overlay —
+# все ключи enforcement-чувствительны (T5a L-2, trust-boundary).
+#
+# profile=guarded = ТЕКУЩЕЕ поведение репо (migration-spec §C): operator_zone on +
+# protected + rail.level=commit + security_floor on. Выбран для НУЛЕВОЙ регрессии при
+# переключении с Python-хука на TS (corpus-паритет .workflow/ledger/t6-corpus-parity.md:
+# на guarded TS ⊇ Python по строгости). Понижение до assist/off = осознанная релаксация,
+# НЕ дефолт.
+profile: guarded
+
+quality_gate:
+  # Юзерская команда качества для рельсов (gated_commit/push/merge). Хук её НЕ использует
+  # (хук только классифицирует bash/path). = текущий .workflow/gate.cmd (core-гейт).
+  cmd: "cd core && node --test test/*.test.ts"
+
+operator_zone:
+  enabled: true
+  # protected главной (operator) сессии = текущий Python path_set [.git,.omp] (guard-rules.yml).
+  # .git добавляется DEFAULT_PROTECTED floor'ом ВСЕГДА (не дублируем здесь); .omp объявляется
+  # явно (иначе TS защитит только .git = регрессия vs Python). .workflow НЕ protected (ledger lead'а).
+  protected:
+    - .omp
+  # external_allow — необязательный override T7-7 operator external-whitelist
+  # (список harness-home директорий, куда operator может писать ВНЕ repoRoot;
+  # `~` = os.homedir()). Не задано здесь -> код-дефолт DEFAULT_EXTERNAL_ALLOW
+  # (core/src/classify/rules.ts): ~/.claude/**, ~/.omp/**, ~/.config/opencode/**,
+  # ~/.codex/**. Задание ключа ЗАМЕНЯЕТ дефолт целиком (не мёрджится).
+  # external_allow:
+  #   - "~/.claude/**"
+
+rail:
+  level: commit          # guarded: commit в reach → rail; push/merge beyond-reach → deny (D6)
+  merge_needs_human: true
+
+security_floor:
+  enabled: true          # always-on backstop (rm-rf/pipe-sh/nc/ssh); + .claude permissions.deny
+
+# B1 / Design C — session-write deny list for command-hook (actor=operator).
+# classifyPath unions this with enforcement_paths (fields stay distinct per ADR).
+# Do NOT put blanket `.workflow/tasks/**` here — task-files are create-only in classify.
+session_write_protected:
+  - .workflow/stages/**
+  - .workflow/active-zone.json
+  - .workflow/design-drafts/**
+
+# B1 / Design C — paths whose diffs are enforcement-sensitive (L1 trailer / L3).
+# Also denied for operator pre-write via classifyPath union with session_write_protected.
+enforcement_paths:
+  - core/src/**
+  - policy.yml
+  - .gitignore
+
+# B1 / Design C — stage-machine budgets. revise_budget default **1** (session lock; not 5).
+# grants: map contract-key -> grant-id -> {bounce?, revise?, resume?}
+#   (apply on judge entry when needs-human).
+# B3 — attribution_fail_closed: when true, L1 refuses new unattributed
+# docs/design/*-{spec,adr}.md (grandfather HEAD files without owner). Default false (W12).
+stage:
+  revise_budget: 1
+  attribution_fail_closed: true
+  # grants: {}

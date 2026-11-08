@@ -1,0 +1,13 @@
+{
+  "name": "aiworkflow-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AIWorkflow TS-native core (governance policy model, classifier, render — pivot in progress).",
+  "scripts": {
+    "test": "node --test test/*.test.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

@@ -1,0 +1,41 @@
+# canon/policy.yml — тир1 (writable canon), schema-скелет
+#
+# Тир: 1 — canon/ (writable, только данные). AD-canon-dir-layout,
+# AD-three-tier-partition.
+# Назначение: политика делегирования/риска (класс задачи -> допустимые
+# действия, эскалация fanout/critic и т.п.). ЭТО НЕ правило защиты путей —
+# правило защиты живёт в тире 2 (core/src/classify/rules.ts; T7-6:
+# tools/policy/guard-rules.yml удалён в T7, source of truth теперь этот
+# TS-файл), см. AD-render-privileged-writer п.2, AD-zone-guard-invert-protection.
+#
+# Наполняет: последующие фазы (после Ф0), по мере переноса
+# delegation/policy-логики из .omp/ в канон.
+#
+# Schema (пример, НЕ активная конфигурация):
+#
+# risk_classes:
+#   - name: refactoring
+#     escalation: none
+#   - name: security
+#     escalation: critic
+
+risk_classes: []
+
+# B1 schema skeleton (live enforcement lives in root policy.yml via
+# core/src/wiring/policy-source.ts). Seed shape for canon (not empty live lists):
+# session_write_protected:
+#   - .workflow/stages/**
+#   - .workflow/active-zone.json
+#   - .workflow/design-drafts/**
+# enforcement_paths:
+#   - core/src/**
+#   - policy.yml
+#   - .gitignore
+# (classifyPath unions both lists for operator; keep fields distinct.)
+# stage:
+#   revise_budget: 1   # B1 session lock (not 5)
+#   grants: {}
+#   attribution_fail_closed: false  # B3; true in root policy.yml enables L1
+#                                   # refuse of new unattributed design artifacts
+#                                   # (docs/design/*-{spec,adr}.md); HEAD without
+#                                   # owner is grandfathered. Resolve default false (W12).

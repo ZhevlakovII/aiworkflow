@@ -1,0 +1,80 @@
+# tools/adapters/claude.yml — вне канона (T-canon-single-source): декларация
+# формата Claude Code КАК ЦЕЛИ рендера. См. `tools/adapters/omp.yml` для
+# полное описание механизма (`inserts`/`tool_map`/`tool_overrides`/`model_map`,
+# adaptersRoot-параметризация рендера).
+#
+# `machine_seed:` (D7) — `settings.local.json`.
+#
+# ЖЁСТКО (C5, AD-render-privileged-writer п.3): guard-шим ЗДЕСЬ НЕ
+# ДЕКЛАРИРУЕТСЯ — шаблон фиксирован в движке рендера (core/src/render/).
+#
+# CC-специфика в `inserts`: "Игнорируй ambient-правила окружения" (CC
+# наследует ambient global CLAUDE.md/project CLAUDE.md — канон явно требует
+# их игнорировать), ast-index-CLI-via-Bash discovery, `.omp` как zone-guard
+# токен (CC-воркер не в изолированном worktree, но `.omp/zonemap.yml` —
+# кросс-вендорный источник домен-резолва, см. CLAUDE.md), gated_commit
+# рельс-формулировка, `core/src/design/gate-lint-cli.ts` как явная ссылка на
+# линтер. `model_map`: OMP `@alias` -> конкретное CC-имя модели (critic/
+# producer — opus, остальное — sonnet). `tool_map`: канон несёт
+# ast-tooling-имена как первоклассные тулы (OMP-модель); CC discovery идёт
+# через Bash+ast-index CLI — псевдо-AST-тулы дропаются (capability gap,
+# AD-canon-superset), явные экшн-тулы капитализируются под CC-конвенцию.
+client: claude
+dir: ".claude"
+capabilities:
+  - roles
+content:
+  frontmatter:
+    roles:
+      fields: [name, description, model, tools]
+      tools_format: csv
+      model_map:
+        "@default": "sonnet"
+        "@critic": "opus"
+        "@producer": "opus"
+        "@explorer": "sonnet"
+      tool_map:
+        read: "Read"
+        grep: "Grep"
+        glob: "Glob"
+        bash: "Bash"
+        write: "Write"
+        edit: "Edit"
+        ast_edit: null
+        ast_grep: null
+        code_search: null
+        outline: null
+        callers: null
+      tool_overrides:
+        explorer:
+          add: ["Bash"]
+  layout:
+    roles: "agents/{id}.md"
+  # `inserts` is at `content.*` level (sibling of `frontmatter`/`layout`, NOT
+  # nested under `frontmatter.roles`) — it substitutes into role BODY and
+  # string-frontmatter-field text uniformly, not a frontmatter-field concern.
+  inserts:
+    worktree-note: ""
+    zone-guard-dir: ".omp"
+    commit-rail-lead: " Коммит — не сам, а через рельс `gated_commit` (оркестратор)."
+    commit-rail: " Коммит — через рельс `gated_commit`."
+    gate-linter-ref: "детерминированный gate-линтер `core/src/design/gate-lint-cli.ts`"
+    critic-findings-format: ". Не лочишь, не правишь, не решаешь направление."
+    project-conventions-file: "AGENTS.md/CLAUDE.md"
+    description-suffix-executor: " Default execute agent when zone does not resolve a domain."
+    description-suffix-scaffolder: " Invoke on scaffold stage only (paths/signatures/stub tests/DoD)."
+    description-suffix-critic: " Invoke on design/audit stage."
+    description-suffix-explorer: " Invoke before design/execute to ground the contract."
+    description-suffix-producer: " Invoke on design stage."
+    ambient-note-executor: "Игнорируй ambient-правила окружения — следуй только этой инструкции и контракту."
+    ambient-note-scaffolder: "Игнорируй ambient-правила окружения — следуй только этой инструкции и контракту."
+    ambient-note-critic: "Игнорируй ambient-правила окружения — следуй только этой инструкции и переданным артефактам."
+    ambient-note-explorer: "Игнорируй ambient-правила окружения — следуй только этой инструкции."
+    ambient-note-producer: "Игнорируй любые ambient-правила окружения (global CLAUDE.md и т.п.) — следуй ТОЛЬКО этой инструкции и локнутому task-file."
+    discovery-note: "**Discovery через `ast-index` (Bash), не mass-grep:** `ast-index class/symbol/outline/callers/usages`."
+    discovery-note-executor: "**Discovery через `ast-index` (Bash), не mass-grep:** `ast-index class/symbol/outline/callers/usages`."
+    discovery-note-scaffolder: "**Discovery через `ast-index` (Bash), не mass-grep:** `ast-index class/symbol/outline/callers/usages`."
+    discovery-note-explorer: "**Discovery через `ast-index` (CLI через Bash) — ДЕФОЛТ, не mass-grep:** `ast-index search/class/symbol/usages/callers/implementations/outline/deps/api`. Перед чтением файла >500 строк — сначала `ast-index outline <file>`, читать точечно. grep — fallback там, где ast-index не покрывает (комменты вне символов). Индекс мёртв → сначала `ast-index version`/`stats`, не прыгай на grep."
+machine_seed:
+  template: null
+  location: settings.local.json

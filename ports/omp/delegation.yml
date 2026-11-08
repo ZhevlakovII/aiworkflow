@@ -1,0 +1,11 @@
+# Делегация backend'а по стадиям (ручка выбора модели-исполнителя). Читается _lib/backend.ts.
+# Приоритет override: task-file поле (`design-backend:`/`execute-backend:`) > env
+#   (OMP_BACKEND_DESIGN/OMP_BACKEND_EXECUTE) > этот файл > дефолт "omp".
+#
+# Значения (B4):
+#   omp         нативная модель из modelRoles/провайдера (Qwen ИЛИ strong-API).
+#   omp-fanout  изолированный субагент (только execute; inner = omp).
+#
+# claude / codex — retired (B4).
+design: omp
+execute: omp

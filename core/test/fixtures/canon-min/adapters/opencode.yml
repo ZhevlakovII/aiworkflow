@@ -1,0 +1,32 @@
+# Fixture adapter (core/test/fixtures/canon-min/) — TS-native T5c-2 hermetic
+# fixture, NOT the live canon/adapters/opencode.yml. Content-shape mirrors the
+# live adapter (roles/zonemap/delegation capabilities, bool_map tools,
+# `mode: subagent` literal); adds the T5c-2 in-process shim declaration
+# (bundled + wrapper at plugins/zone-guard.ts) to cover the OpenCode wrapper
+# template in engine-emit tests.
+client: opencode
+dir: ".opencode"
+capabilities:
+  - roles
+  - zonemap
+  - delegation
+content:
+  frontmatter:
+    roles:
+      fields: [description, model, tools]
+      tools_format: bool_map
+      literals:
+        mode: subagent
+  layout:
+    roles: "agents/{id}.md"
+    zonemap: "zonemap.yml"
+    delegation: "delegation.yml"
+machine_seed:
+  template: null
+  location: opencode.json
+  root: true
+shim:
+  mode: bundled
+  location: "_core"
+  style: in-process
+  entry: "plugins/zone-guard.ts"

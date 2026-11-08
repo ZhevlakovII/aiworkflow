@@ -1,0 +1,6 @@
+# Fixture zonemap (core/test/fixtures/canon-min/) — NOT the live canon/zonemap.yml.
+map:
+  - glob: "src/**"
+    agent: worker
+default: null
+deny_domain: []

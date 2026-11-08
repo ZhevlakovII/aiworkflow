@@ -1,0 +1,54 @@
+# tools/adapters/omp.yml — вне канона (T-canon-single-source): декларация
+# формата OMP КАК ЦЕЛИ рендера. Канон (`canon/roles/*.md`) — нейтральный,
+# без имён инструментов/провайдеров; весь vendor-контекст (frontmatter-поля,
+# layout, tool-имена, текстовые вставки) живёт здесь, рендер (`core/src/
+# render/`) читает это по параметру (`--adapters`/`RenderOptions.
+# adaptersRoot`), путь НЕ хардкожен внутри канона.
+#
+# `capabilities:` — какие классы ресурсов этот клиент способен представить
+# (AD-canon-superset-capability). `roles` ONLY (lead decision, T-canon-
+# single-source): `zonemap`/`delegation` — project config, живёт строго в
+# проекте (installer сеет при отсутствии, НЕ рендер) — render НИКОГДА не
+# пишет `.omp/zonemap.yml`/`.omp/delegation.yml`, иначе он затирает реальный
+# FinManage-конфиг пустым canon-скелетом на каждом прогоне и ломает флоу.
+# Вернуть capability сюда — только вместе с Ф6-миграцией реального контента
+# в канон (`AD-omp-migration-procedure`), не раньше.
+#
+# `machine_seed:` (D7, T-machine, 4-й тир, out-of-repo, per-machine):
+# шаблон+локация machine-local конфига для OMP — `~/.omp/agent/config.yml`.
+#
+# ЖЁСТКО (C5, AD-render-privileged-writer п.3): guard-шим ЗДЕСЬ НЕ
+# ДЕКЛАРИРУЕТСЯ — шаблон фиксирован в движке рендера (core/src/render/).
+#
+# OMP — базовый/эталонный порт: identity на `tool_map`/`model_map` (те же
+# имена тулов/алиасы модели, что и в каноне, только lowercase через
+# tools_format) — не декларируются. Не несёт `permission` (OpenCode-only поле).
+client: omp
+dir: ".omp"
+capabilities:
+  - roles
+content:
+  frontmatter:
+    roles:
+      fields: [name, description, model, tools, read-summarize]
+      tools_format: csv_lower
+  layout:
+    roles: "agents/{id}.md"
+  # AD-canon-role-inserts (T-canon-single-source): named text fragments
+  # substituted into canon `{{insert:KEY}}` placeholders. OMP is the
+  # "no-frills" baseline port — no ambient-ignore line (no ambient-rules
+  # problem, pi-native harness), no discovery-line on the generic executor
+  # (only domain executors get the ast-index reminder), no commit-rail
+  # sentence (OMP has no gated_commit rail concept in the role text), native
+  # `.omp` zone-guard token, isolated-worktree execution model.
+  inserts:
+    worktree-note: " (isolated worktree)"
+    zone-guard-dir: ".omp"
+    discovery-note: "**Discovery через ast-index** (не mass-grep): `ast-index class/symbol/outline/callers/usages`."
+    discovery-note-explorer: "**Discovery через ast-тулы — ДЕФОЛТ, не mass-grep:** `code_search` (symbol/class/usages/callers/implementations/deps/api), `outline` (структура файла до чтения), `callers` (кто зовёт). grep — только fallback там, где ast не покрывает (комменты вне символов)."
+    gate-linter-ref: "детерминированный gate-линтер"
+    critic-findings-format: ". Не лочишь, не правишь, не решаешь направление."
+    project-conventions-file: "AGENTS.md/CLAUDE.md"
+machine_seed:
+  template: null
+  location: "~/.omp/agent/config.yml"

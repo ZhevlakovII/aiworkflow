@@ -10,6 +10,13 @@
 #   3) install.ps1 - deploy product (preserves machine-head);
 #   4) post-install load-smoke (omp -p exit 0).
 #
+# -Target <dir> is forwarded to flavor installers (A3 req 5) - omp/claude/opencode/cursor
+# each get their own project-scoped install under <dir>/.omp, <dir>/.claude, <dir>/.opencode,
+# <dir>/.cursor. -KeepAgents is likewise forwarded (project-scoped: never overwrite an
+# agents/*.md already at dest - A3 req 4).
+#
+# Flow notes: `all` includes cursor; `both` stays omp+claude+opencode ONLY (no cursor).
+#
 # POSIX twin: tools/setup.sh (linux/macos), identical steps.
 # NOTE: ASCII-only on purpose - PS 5.1 parses .ps1 as cp1251 without a BOM, so non-ASCII breaks it.
 #
@@ -19,6 +26,8 @@
 #   powershell -ExecutionPolicy Bypass -File tools/setup.ps1 -Yes             # install every installable missing
 #   powershell -ExecutionPolicy Bypass -File tools/setup.ps1 -Install node,git # install only named, no prompt
 #   powershell -ExecutionPolicy Bypass -File tools/setup.ps1 -SkipSmoke       # skip load-smoke
+#   powershell -ExecutionPolicy Bypass -File tools/setup.ps1 -Target C:\proj  # project-scoped, all flavors
+#   powershell -ExecutionPolicy Bypass -File tools/setup.ps1 -Flow cursor
 param(
     [switch]$Check,
     [switch]$Yes,
@@ -26,19 +35,21 @@ param(
     [string[]]$Install = @(),    # install only these (by cmd name), no prompt
     [switch]$SkipSmoke,
     [switch]$DefaultRoles,       # bind modelRoles non-interactively (defaults from models.yml)
-    [ValidateSet('omp','claude','opencode','all','both')]
-    [string]$Flow = 'all',       # which flow flavor to install: OMP / Claude Code / OpenCode / all (both = alias of all)
-    [string]$Target = ''         # claude/opencode flavor: project dir for a project-scoped install (default global)
+    [ValidateSet('omp','claude','opencode','cursor','all','both')]
+    [string]$Flow = 'all',       # which flow flavor: OMP / Claude / OpenCode / Cursor / all (both = omp+claude+opencode, NO cursor)
+    [string]$Target = '',        # project dir for a project-scoped install (default global)
+    [switch]$KeepAgents          # project-scoped: never overwrite an agents/*.md already at dest (A3 req 4)
 )
 $ErrorActionPreference = 'Stop'
 if ($InstallMissing) { $Yes = $true }
 $doOmp      = ($Flow -eq 'omp'      -or $Flow -eq 'all' -or $Flow -eq 'both')
 $doClaude   = ($Flow -eq 'claude'   -or $Flow -eq 'all' -or $Flow -eq 'both')
 $doOpencode = ($Flow -eq 'opencode' -or $Flow -eq 'all' -or $Flow -eq 'both')
+$doCursor   = ($Flow -eq 'cursor'   -or $Flow -eq 'all')   # both deliberately excludes cursor
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Repo      = Split-Path -Parent $ScriptDir
-$Canon     = Join-Path $Repo '.omp'
+$Canon     = Join-Path $Repo 'ports\omp'
 $Global    = Join-Path $HOME '.omp/agent'
 $Templates = Join-Path $ScriptDir 'templates'
 
@@ -74,8 +85,6 @@ function PkgFor([string]$cmd) {
         'git:winget'       { 'winget install -e --id Git.Git --accept-source-agreements --accept-package-agreements' }
         'git:scoop'        { 'scoop install git' }
         'ast-index:winget' { 'winget install -e --id defendend.ast-index --accept-source-agreements --accept-package-agreements' }
-        'python:winget'    { 'winget install -e --id Python.Python.3.12 --accept-source-agreements --accept-package-agreements' }
-        'python:scoop'     { 'scoop install python' }
         'java:winget'      { 'winget install -e --id EclipseAdoptium.Temurin.21.JDK --accept-source-agreements --accept-package-agreements' }
         'java:scoop'       { 'scoop install temurin21-jdk' }
         default            { '' }
@@ -83,18 +92,19 @@ function PkgFor([string]$cmd) {
 }
 
 Write-Host "=== AI Workflow setup ===" -ForegroundColor Cyan
-Write-Host "flow:   $Flow  (omp=$doOmp claude=$doClaude opencode=$doOpencode)" -ForegroundColor Cyan
+Write-Host "flow:   $Flow  (omp=$doOmp claude=$doClaude opencode=$doOpencode cursor=$doCursor)" -ForegroundColor Cyan
 Write-Host "canon:  $Canon"
 Write-Host "global: $Global`n"
 
 # --- 1. Prereqs ---
-# requiredness depends on flavor: OMP needs omp+node; Claude Code needs claude CLI. python/git/ast-index both.
+# requiredness depends on flavor: OMP needs omp+node; Claude Code needs claude CLI. git/ast-index both.
+# T7-6 (contract L-3): python prereq removed — the rails/drivers were all ported to node
+# (core/src/**), no tools/*.py left, nothing here shells out to python anymore.
 $claudeHint = 'https://claude.ai/code (not npm; ToS-safe worker)'
 $claudeHint += if ($doClaude) { ' - REQUIRED for the claude flow flavor' } else { ' - needed only for claude delegation backend' }
 $prereqs = @(
     @{ name='OMP (oh-my-pi)'; cmd='omp';       args=@('--version'); required=$doOmp;    hint='https://omp.sh (native x64 binary)' },
     @{ name='Node.js >=24';   cmd='node';      args=@('--version'); required=$doOmp;    hint='winget install OpenJS.NodeJS  (or nvm)' },
-    @{ name='Python 3.10+';   cmd='python';    args=@('--version'); required=$true;     hint='winget install Python.Python.3.12 (rails/drivers tools/*.py)' },
     @{ name='Claude CLI';     cmd='claude';    args=@('--version'); required=$doClaude; hint=$claudeHint },
     @{ name='OpenCode';       cmd='opencode';  args=@('--version'); required=$doOpencode; hint='https://opencode.ai (TUI/Desktop) - REQUIRED for opencode flow flavor' },
     @{ name='git';            cmd='git';       args=@('--version'); required=$true;     hint='winget install Git.Git' },
@@ -224,14 +234,14 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
 }
 Write-Host ""
 
-# --- 3. install.ps1 (deploy product; preserves machine-head) ---
+# --- 3. install.ps1 (deploy product; preserves machine-head; -Target -> project-scoped OMP too, A3 req 5) ---
 $installer = Join-Path $ScriptDir 'install.ps1'
 Write-Host "--- install.ps1 ---" -ForegroundColor Cyan
-if ($Check) {
-    & powershell -ExecutionPolicy Bypass -File $installer -Check
-} else {
-    & powershell -ExecutionPolicy Bypass -File $installer
-}
+$ompArgs = @()
+if ($Check)      { $ompArgs += '-Check' }
+if ($Target)     { $ompArgs += '-Target'; $ompArgs += $Target }
+if ($KeepAgents) { $ompArgs += '-KeepAgents' }
+& powershell -ExecutionPolicy Bypass -File $installer @ompArgs
 if ($LASTEXITCODE -ne 0) { Write-Host "install.ps1 failed (exit $LASTEXITCODE)" -ForegroundColor Red; exit $LASTEXITCODE }
 Write-Host ""
 
@@ -263,8 +273,9 @@ if ($doClaude) {
     $ccInstaller = Join-Path $ScriptDir 'install-claude.ps1'
     Write-Host "--- install-claude.ps1 ---" -ForegroundColor Cyan
     $ccArgs = @()
-    if ($Check)   { $ccArgs += '-Check' }
-    if ($Target)  { $ccArgs += '-Target'; $ccArgs += $Target }
+    if ($Check)      { $ccArgs += '-Check' }
+    if ($Target)     { $ccArgs += '-Target'; $ccArgs += $Target }
+    if ($KeepAgents) { $ccArgs += '-KeepAgents' }
     & powershell -ExecutionPolicy Bypass -File $ccInstaller @ccArgs
     if ($LASTEXITCODE -ne 0) { Write-Host "install-claude.ps1 failed (exit $LASTEXITCODE)" -ForegroundColor Red; exit $LASTEXITCODE }
     Write-Host ""
@@ -275,10 +286,24 @@ if ($doOpencode) {
     $ocInstaller = Join-Path $ScriptDir 'install-opencode.ps1'
     Write-Host "--- install-opencode.ps1 ---" -ForegroundColor Cyan
     $ocArgs = @()
-    if ($Check)  { $ocArgs += '-Check' }
-    if ($Target) { $ocArgs += '-Target'; $ocArgs += $Target }
+    if ($Check)      { $ocArgs += '-Check' }
+    if ($Target)     { $ocArgs += '-Target'; $ocArgs += $Target }
+    if ($KeepAgents) { $ocArgs += '-KeepAgents' }
     & powershell -ExecutionPolicy Bypass -File $ocInstaller @ocArgs
     if ($LASTEXITCODE -ne 0) { Write-Host "install-opencode.ps1 failed (exit $LASTEXITCODE)" -ForegroundColor Red; exit $LASTEXITCODE }
+    Write-Host ""
+}
+
+# --- 7. Cursor flavor (agents + skills + hooks.json) ---
+if ($doCursor) {
+    $cuInstaller = Join-Path $ScriptDir 'install-cursor.ps1'
+    Write-Host "--- install-cursor.ps1 ---" -ForegroundColor Cyan
+    $cuArgs = @()
+    if ($Check)      { $cuArgs += '-Check' }
+    if ($Target)     { $cuArgs += '-Target'; $cuArgs += $Target }
+    if ($KeepAgents) { $cuArgs += '-KeepAgents' }
+    & powershell -ExecutionPolicy Bypass -File $cuInstaller @cuArgs
+    if ($LASTEXITCODE -ne 0) { Write-Host "install-cursor.ps1 failed (exit $LASTEXITCODE)" -ForegroundColor Red; exit $LASTEXITCODE }
     Write-Host ""
 }
 

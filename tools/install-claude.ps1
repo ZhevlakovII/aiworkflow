@@ -7,51 +7,173 @@
   .claude layer so Claude Code sees the subagents, slash-commands and enforcement hooks.
 
   Default target = user-global ~/.claude (available in every project). -Target <dir>
-  stamps into <dir>/.claude instead (project-scoped) and also copies CLAUDE.md.
+  stamps into <dir>/.claude instead (project-scoped) and also copies root AGENTS.md
+  (if-absent; never overwrites).
 
-  Tool/hook paths are rewritten to ABSOLUTE clone paths (<repo>/tools, <repo>/.claude/hooks)
-  so commands/hooks work from any project cwd. Hooks are cwd-aware (read target project
+  Tool/hook paths are rewritten to ABSOLUTE clone paths (<repo>/tools, <repo>/core) so
+  commands/hooks work from any project cwd. Hooks are cwd-aware (read target project
   root from the hook stdin), so a single global copy serves every project.
+
+  The enforcement PreToolUse hook is the TS command-hook shim
+  (core/src/shim/command-hook.ts); the L1-L3 rails (core/src/rails/cli.ts) are invoked
+  by the copied slash-commands. Both run on Node's native TS strip (Node >=22.6 or
+  >=23) - the old python zone-guard.py / gated_*.py / zone_check.py rails are retired,
+  and so is the design-stage driver (design_stage.py/gate_setup.py/claude_worker.py/
+  gate_lint.py, ported to core/src/design/*-cli.ts) - no copied slash-command shells
+  out to python anymore. The PostToolUse telemetry hook is also TS now
+  (core/src/ops/telemetry-hook.ts, ported from .claude/hooks/telemetry.py) - this
+  installer script needs no python at all (uses ConvertFrom-Json natively).
 
   settings.json is MERGED (not overwritten): our PreToolUse/PostToolUse hooks and
   permissions.deny are spliced in, preserving any existing user settings (statusline, etc.).
 
+  Agents/*.md are NOT copied verbatim from the committed `.claude/agents` port copy
+  (A3 req 2): every install renders `canon/roles` + `tools/adapters/claude.yml`
+  into a fresh temp dir (`node core/src/render/cli.ts render --out <tmp> --clients
+  claude`) and installs FROM THAT RENDER — a broken/missing node aborts the
+  installer, no silent fallback. Global mode mirrors (deletes stale); project mode
+  OVERLAYS (never deletes a project's own extra agents/*.md; -KeepAgents freezes
+  any file already present at the dest — A3 req 4).
+
 .PARAMETER Check   Dry-run: report what would change, write nothing.
 .PARAMETER Target  Project dir for a project-scoped install (default: global ~/.claude).
+.PARAMETER KeepAgents  Project-scoped only: never overwrite an agents/*.md already at dest.
 #>
 [CmdletBinding()]
-param([switch]$Check, [string]$Target = '')
+param([switch]$Check, [string]$Target = '', [switch]$KeepAgents)
 
 $ErrorActionPreference = 'Stop'
 $repo    = Split-Path -Parent $PSScriptRoot
-$src     = Join-Path $repo '.claude'
+$src     = Join-Path $repo 'ports\claude'
 $repoFwd = ($repo -replace '\\','/')
+$canonRoleRoot = Join-Path $repo 'canon'
+$adaptersRoot  = Join-Path $repo 'tools\adapters'
 if (-not (Test-Path $src)) { throw "canon .claude not found: $src" }
 
 $projectScoped = [bool]$Target
 $dest = if ($projectScoped) { Join-Path $Target '.claude' } else { Join-Path $HOME '.claude' }
+# Tracked while walking the project agents-overlay loop below (A3b): see install.ps1 for rationale.
+$canonAgentNames = @()
+$keptAgentOverlayNames = @()
 
-Write-Host "flavor: claude-code" -ForegroundColor Cyan
-Write-Host "canon:  $src"
-Write-Host "dest:   $dest  ($(if ($projectScoped){'project-scoped'}else{'global'}))`n"
+# A3b fix: a -KeepAgents-frozen canon-named file is a REAL project overlay (needs the `!`
+# un-ignore exception) only if its content actually differs from the freshly rendered canon
+# file - a byte-identical (CRLF/LF-insensitive) kept file is just a plain canon copy from a
+# prior install and should stay ignored.
+function Test-SameAgentContent($srcFile, $dstFile) {
+    if (-not (Test-Path $dstFile)) { return $false }
+    $a = (Get-Content $srcFile -Raw -Encoding UTF8) -replace "`r`n","`n"
+    $b = (Get-Content $dstFile -Raw -Encoding UTF8) -replace "`r`n","`n"
+    return $a -eq $b
+}
 
-if (-not $Check) { New-Item -ItemType Directory -Force -Path $dest | Out-Null }
+# A3b: writes/replaces the managed `# >>> aiworkflow <flavor> (managed) >>> ... <<<` block in
+# <targetRoot>/.gitignore (project-scoped installs only). See install.ps1 for full rationale.
+function Set-ManagedGitignoreBlock($targetRoot, $flavor, [string[]]$ignoreLines, [string[]]$exceptionLines, $check) {
+    $ignPath = Join-Path $targetRoot ".gitignore"
+    $begin = "# >>> aiworkflow $flavor (managed) >>>"
+    $end   = "# <<< aiworkflow $flavor (managed) <<<"
+    $bodyLines = @($ignoreLines) + @($exceptionLines | ForEach-Object { "!$_" })
+    $block = @($begin) + $bodyLines + @($end)
 
-# --- 1. Mirror agents/ (verbatim) ---
-foreach ($t in @('agents')) {
-    $s = Join-Path $src $t; $d = Join-Path $dest $t
-    if (-not (Test-Path $s)) { continue }
-    if ($Check) {
-        $chg = robocopy $s $d /MIR /L /NJH /NJS /NDL /NP /NC /NS
-        Write-Host ("[check] {0}: {1} file(s) would change" -f $t, (($chg | Where-Object { $_.Trim() -ne '' }).Count))
+    $existing = if (Test-Path $ignPath) { [System.IO.File]::ReadAllText($ignPath) } else { "" }
+    $lines = if ($existing -ne "") { ($existing -replace "`r`n","`n") -split "`n" } else { @() }
+
+    $startIdx = -1; $endIdx = -1
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -eq $begin -and $startIdx -lt 0) { $startIdx = $i }
+        elseif ($lines[$i] -eq $end -and $startIdx -ge 0 -and $endIdx -lt 0) { $endIdx = $i }
+    }
+
+    if ($startIdx -ge 0 -and $endIdx -ge $startIdx) {
+        $before = if ($startIdx -gt 0) { @($lines[0..($startIdx - 1)]) } else { @() }
+        $after  = if ($endIdx -lt $lines.Count - 1) { @($lines[($endIdx + 1)..($lines.Count - 1)]) } else { @() }
+        $newLines = @($before) + @($block) + @($after)
+    } elseif ($lines.Count -gt 0) {
+        $newLines = @($lines) + @("") + @($block)
     } else {
-        robocopy $s $d /MIR /NJH /NJS /NDL /NP /NC /NS | Out-Null
-        if ($LASTEXITCODE -ge 8) { throw "robocopy $t failed ($LASTEXITCODE)" }
-        Write-Host "[sync] $t/ mirrored"
+        $newLines = @($block)
+    }
+    $newText = (($newLines -join "`n").TrimEnd() + "`n")
+    $existingNorm = if ($existing -ne "") { (($existing -replace "`r`n","`n").TrimEnd() + "`n") } else { "" }
+
+    if ($check) {
+        $state = if ($existingNorm -ne $newText) { "would change" } else { "in sync" }
+        Write-Host ("[check] .gitignore ({0} block): {1}" -f $flavor, $state)
+    } else {
+        [System.IO.File]::WriteAllText($ignPath, $newText, (New-Object System.Text.UTF8Encoding $false))
+        Write-Host ("[sync] .gitignore ({0} managed block)" -f $flavor)
     }
 }
 
-# --- 2. commands/ (rewrite `python tools/X.py` -> absolute clone path) ---
+Write-Host "flavor: claude-code" -ForegroundColor Cyan
+Write-Host "canon:  $src"
+Write-Host "dest:   $dest  ($(if ($projectScoped){'project-scoped'}else{'global'}))"
+
+# node is required at run time by the PreToolUse hook (command-hook.ts) and the L1-L3
+# rails (rails/cli.ts) - both run via `node <script>.ts` (native TS strip, Node >=22.6/23) -
+# and now ALSO at install-time to render canon agents (A3 req 2) - hard requirement, no
+# silent fallback (a missing/broken node must abort the installer, not skip agents).
+$nodeVersion = $null
+try { $nodeVersion = (& node --version) 2>$null } catch { $nodeVersion = $null }
+if (-not $nodeVersion) {
+    throw "node not found on PATH - required to render canon agents (core/src/render/cli.ts) and by the PreToolUse hook/rails at run time (native TS strip, Node >=22.6 or >=23)."
+} else {
+    Write-Host "node:   $nodeVersion"
+}
+Write-Host ""
+
+if (-not $Check) { New-Item -ItemType Directory -Force -Path $dest | Out-Null }
+
+# --- 1. agents/: render canon fresh (A3 req 2 - never install from a committed port copy) ---
+$renderTmp = Join-Path $env:TEMP ("aiwf-render-claude-" + [guid]::NewGuid().ToString("N"))
+try {
+    $rendererScript = Join-Path $repo 'core\src\render\cli.ts'
+    $renderOut = & node $rendererScript render --out $renderTmp --clients claude --canon $canonRoleRoot --adapters $adaptersRoot 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "canon render failed (exit $LASTEXITCODE): $renderOut" }
+
+    $agentsSrc = Join-Path $renderTmp '.claude\agents'
+    $agentsDst = Join-Path $dest 'agents'
+    if (Test-Path $agentsSrc) {
+        if (-not $projectScoped) {
+            # Global: full mirror (delete stale) - same semantics this installer always had.
+            if ($Check) {
+                $chg = robocopy $agentsSrc $agentsDst /MIR /L /NJH /NJS /NDL /NP /NC /NS
+                Write-Host ("[check] agents: {0} file(s) would change" -f (($chg | Where-Object { $_.Trim() -ne '' }).Count))
+            } else {
+                robocopy $agentsSrc $agentsDst /MIR /NJH /NJS /NDL /NP /NC /NS | Out-Null
+                if ($LASTEXITCODE -ge 8) { throw "robocopy agents failed ($LASTEXITCODE)" }
+                Write-Host "[sync] agents/ mirrored (rendered from canon)"
+            }
+        } else {
+            # Project: OVERLAY - never delete a project's own extra agents/*.md (A3 req 4).
+            # -KeepAgents freezes ANY file already present at dest (canon-named or not).
+            if (-not $Check) { New-Item -ItemType Directory -Force -Path $agentsDst | Out-Null }
+            $changed = 0
+            foreach ($f in Get-ChildItem $agentsSrc -Filter *.md) {
+                $outFile = Join-Path $agentsDst $f.Name
+                $exists = Test-Path $outFile
+                $canonAgentNames += $f.Name
+                if ($exists -and $KeepAgents) {
+                    if (-not (Test-SameAgentContent $f.FullName $outFile)) { $keptAgentOverlayNames += $f.Name }
+                    continue
+                }
+                if ($Check) {
+                    $same = $exists -and ((Get-FileHash $f.FullName).Hash -eq (Get-FileHash $outFile).Hash)
+                    if (-not $same) { $changed++ }
+                } else {
+                    Copy-Item $f.FullName $outFile -Force
+                }
+            }
+            if ($Check) { Write-Host ("[check] agents/ (project overlay): {0} file(s) would change" -f $changed) }
+            else        { Write-Host "[sync] agents/ overlaid from rendered canon (project extras kept)" }
+        }
+    }
+} finally {
+    Remove-Item -Recurse -Force $renderTmp -ErrorAction SilentlyContinue
+}
+
+# --- 2. commands/ (rewrite `python tools/X.py` and `$CLAUDE_PROJECT_DIR/core/` -> absolute clone path) ---
 $cmdSrc = Join-Path $src 'commands'
 $cmdDst = Join-Path $dest 'commands'
 if (Test-Path $cmdSrc) {
@@ -59,6 +181,7 @@ if (Test-Path $cmdSrc) {
     foreach ($f in Get-ChildItem $cmdSrc -Filter *.md) {
         $body = Get-Content $f.FullName -Encoding UTF8 -Raw
         $body = [regex]::Replace($body, 'python tools/(\S+\.py)', ('python "' + $repoFwd + '/tools/$1"'))
+        $body = $body.Replace('$CLAUDE_PROJECT_DIR/core/', ($repoFwd + '/core/'))
         $out  = Join-Path $cmdDst $f.Name
         if ($Check) {
             $cur = if (Test-Path $out) { Get-Content $out -Encoding UTF8 -Raw } else { '' }
@@ -72,8 +195,8 @@ if (Test-Path $cmdSrc) {
 
 # --- 3. settings.json MERGE (hooks + permissions.deny; preserve existing keys) ---
 $setDst = Join-Path $dest 'settings.json'
-$zg  = 'python "' + $repoFwd + '/.claude/hooks/zone-guard.py"'
-$tel = 'python "' + $repoFwd + '/.claude/hooks/telemetry.py"'
+$hookCmd = 'node "' + $repoFwd + '/core/src/shim/command-hook.ts" claude'
+$tel     = 'node "' + $repoFwd + '/core/src/ops/telemetry-hook.ts"'
 
 $cfg = $null
 if (Test-Path $setDst) {
@@ -96,21 +219,56 @@ foreach ($d in @('Bash(rm -rf:*)','Bash(nc:*)','Bash(ssh:*)','PowerShell(Remove-
 }
 $perm.deny = $deny
 
-# hooks (dedupe by 'zone-guard'/'telemetry' substring so re-run does not duplicate)
+# hooks (dedupe by tag substrings so re-run REPLACES a stale entry instead of duplicating -
+# 'zone-guard' catches the old python hook, 'command-hook' catches a prior TS install).
+# Matcher = required ∪ displaced group's matcher so reinstall never strips tokens
+# (e.g. PowerShell or an extra tool X already recorded).
 $hooks = Ensure-Prop $cfg 'hooks' ([pscustomobject]@{})
-function Set-HookGroup($hooksObj, $event, $matcher, $cmd, $tag) {
-    $arr = @()
-    if ($hooksObj.PSObject.Properties.Name -contains $event) {
-        $arr = @($hooksObj.$event | Where-Object {
-            -not ($_.hooks | Where-Object { "$($_.command)" -like "*$tag*" })
-        })
+function Union-Matcher([string]$Required, [string]$Existing = '') {
+    $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $out = New-Object System.Collections.Generic.List[string]
+    foreach ($raw in @($Required, $Existing)) {
+        if ([string]::IsNullOrWhiteSpace($raw)) { continue }
+        foreach ($tok in ($raw -split '\|')) {
+            $t = $tok.Trim()
+            if ($t.Length -eq 0) { continue }
+            if ($seen.Add($t)) { [void]$out.Add($t) }
+        }
     }
-    $arr += [pscustomobject]@{ matcher = $matcher; hooks = @([pscustomobject]@{ type = 'command'; command = $cmd }) }
+    return ($out -join '|')
+}
+function Set-HookGroup($hooksObj, $event, $matcher, $cmd, $tags) {
+    $arr = @()
+    $displacedMatchers = @()
+    if ($hooksObj.PSObject.Properties.Name -contains $event) {
+        foreach ($grp in @($hooksObj.$event)) {
+            $hit = $false
+            foreach ($h in @($grp.hooks)) {
+                $hc = "$($h.command)"
+                foreach ($tag in $tags) {
+                    if ($hc -like "*$tag*") { $hit = $true; break }
+                }
+                if ($hit) { break }
+            }
+            if ($hit) {
+                if ($null -ne $grp.matcher -and "$($grp.matcher)" -ne '') {
+                    $displacedMatchers += "$($grp.matcher)"
+                }
+            } else {
+                $arr += $grp
+            }
+        }
+    }
+    $finalMatcher = $matcher
+    foreach ($m in $displacedMatchers) {
+        $finalMatcher = Union-Matcher $finalMatcher $m
+    }
+    $arr += [pscustomobject]@{ matcher = $finalMatcher; hooks = @([pscustomobject]@{ type = 'command'; command = $cmd }) }
     if ($hooksObj.PSObject.Properties.Name -contains $event) { $hooksObj.$event = $arr }
     else { $hooksObj | Add-Member -NotePropertyName $event -NotePropertyValue $arr }
 }
-Set-HookGroup $hooks 'PreToolUse'  'Bash|Write|Edit|MultiEdit|NotebookEdit' $zg  'zone-guard'
-Set-HookGroup $hooks 'PostToolUse' ''                                        $tel 'telemetry'
+Set-HookGroup $hooks 'PreToolUse'  'Bash|PowerShell|Write|Edit|MultiEdit|NotebookEdit' $hookCmd @('zone-guard', 'command-hook')
+Set-HookGroup $hooks 'PostToolUse' ''                                        $tel     @('telemetry')
 
 $json = $cfg | ConvertTo-Json -Depth 20
 if ($Check) {
@@ -121,18 +279,30 @@ if ($Check) {
     Write-Host "[sync] settings.json (hooks + permissions.deny merged, existing keys preserved)"
 }
 
-# --- 4. CLAUDE.md (project-scoped only; global install skips it to avoid ambient rules) ---
-$claudeSrc = Join-Path $repo 'CLAUDE.md'
-if ($projectScoped -and (Test-Path $claudeSrc)) {
-    $claudeDst = Join-Path $Target 'CLAUDE.md'
+# --- 4. AGENTS.md (project-scoped only; global install skips it to avoid ambient rules) ---
+$agentsMdSrc = Join-Path $repo 'AGENTS.md'
+if ($projectScoped -and (Test-Path $agentsMdSrc)) {
+    $agentsMdDst = Join-Path $Target 'AGENTS.md'
     if ($Check) {
-        Write-Host ("[check] CLAUDE.md: {0}" -f $(if (Test-Path $claudeDst) { 'exists (will NOT overwrite)' } else { 'would create' }))
-    } elseif (Test-Path $claudeDst) {
-        Write-Host "[keep] CLAUDE.md exists in target - not overwritten" -ForegroundColor DarkGray
+        Write-Host ("[check] AGENTS.md: {0}" -f $(if (Test-Path $agentsMdDst) { 'exists (will NOT overwrite)' } else { 'would create' }))
+    } elseif (Test-Path $agentsMdDst) {
+        Write-Host "[keep] AGENTS.md exists in target - not overwritten" -ForegroundColor DarkGray
     } else {
-        Copy-Item $claudeSrc $claudeDst
-        Write-Host "[sync] CLAUDE.md -> target project"
+        Copy-Item $agentsMdSrc $agentsMdDst
+        Write-Host "[sync] AGENTS.md -> target project"
     }
+}
+
+# --- 5. Project .gitignore managed block (A3b, project-scoped ONLY) ---
+# Ignores installed FLAVOR artifacts (commands/, settings.json + canon-named agents/*.md); never
+# ignores project data (a canon-named overlay -KeepAgents froze gets an explicit `!` exception;
+# AGENTS.md is a project-owned seed, never touched here).
+if ($projectScoped) {
+    $ignoreLines = @('.claude/commands/', '.claude/settings.json')
+    foreach ($n in $canonAgentNames) { $ignoreLines += ".claude/agents/$n" }
+    $exceptionLines = @()
+    foreach ($n in $keptAgentOverlayNames) { $exceptionLines += ".claude/agents/$n" }
+    Set-ManagedGitignoreBlock $Target 'claude' $ignoreLines $exceptionLines $Check
 }
 
 Write-Host ""
@@ -142,7 +312,11 @@ if ($Check) {
     Write-Host "CLAUDE-CODE flavor installed." -ForegroundColor Green
     if (-not $projectScoped) {
         Write-Host "  Global: agents+commands+hooks live in ~/.claude and every project." -ForegroundColor DarkGray
-        Write-Host "  Per-project lead protocol: copy $claudeSrc into a project as CLAUDE.md (opt-in)." -ForegroundColor DarkGray
+        Write-Host "  Per-project lead protocol: copy $repo\AGENTS.md into a project as AGENTS.md (opt-in)." -ForegroundColor DarkGray
     }
+    Write-Host "  Governance: the hook/rails read <target-project-cwd>/policy.yml (git-tracked, per-project)." -ForegroundColor DarkGray
+    Write-Host "  No policy.yml in a target project -> NOT deny-all: falls back to profile 'assist' (interactive) or 'guarded' (headless/CI)." -ForegroundColor DarkGray
+    Write-Host "  That default is a reasonable fail-closed floor, not a copy of this repo's own policy.yml (repo-specific quality_gate.cmd/protected paths) -" -ForegroundColor DarkGray
+    Write-Host "  copy $repo\policy.yml into a target project yourself and adjust it if you want the guarded-with-protected-extras profile this repo runs." -ForegroundColor DarkGray
     Write-Host "  Reload Claude Code (restart session) for settings.json hooks to take effect." -ForegroundColor Yellow
 }

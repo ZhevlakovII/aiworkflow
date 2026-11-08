@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "command": "node \"<clone>/core/src/shim/command-hook.ts\" cursor"
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "command": "node \"<clone>/core/src/shim/command-hook.ts\" cursor"
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "command": "node \"<clone>/core/src/shim/command-hook.ts\" cursor"
+      }
+    ],
+    "subagentStart": [
+      {
+        "command": "node \"<clone>/core/src/shim/command-hook.ts\" cursor"
+      }
+    ],
+    "subagentStop": [
+      {
+        "command": "node \"<clone>/core/src/shim/command-hook.ts\" cursor"
+      }
+    ]
+  }
+}

@@ -1,0 +1,64 @@
+# tools/adapters/cursor.yml — вне канона (T-canon-single-source): декларация
+# формата Cursor КАК ЦЕЛИ рендера. См. `tools/adapters/claude.yml` /
+# `tools/adapters/omp.yml` для механизм (`inserts`/`tool_map`/`model_map`).
+#
+# Cursor: нет customTools (в отличие от OMP). Коммит/push/merge — через
+# rail CLI (`node <clone>/core/src/rails/cli.ts`), не имя OMP-тула
+# gated_commit. Glob у Cursor как agent-tool не вводим (degrade: `glob: null`).
+# Shell — нативное имя тула Cursor; хук мапит Shell→Bash-класс классификатора.
+client: cursor
+dir: ".cursor"
+capabilities:
+  - roles
+content:
+  frontmatter:
+    roles:
+      fields: [name, description, model, tools]
+      tools_format: csv
+      model_map:
+        "@default": "sonnet"
+        "@critic": "opus"
+        "@producer": "opus"
+        "@explorer": "sonnet"
+      tool_map:
+        read: "Read"
+        grep: "Grep"
+        glob: null
+        bash: "Shell"
+        write: "Write"
+        edit: "Write"
+        ast_edit: null
+        ast_grep: null
+        code_search: null
+        outline: null
+        callers: null
+      tool_overrides:
+        explorer:
+          add: ["Shell"]
+  layout:
+    roles: "agents/{id}.md"
+  inserts:
+    worktree-note: ""
+    zone-guard-dir: ".omp"
+    commit-rail-lead: " Коммит — не сам, а через rail CLI `node <clone>/core/src/rails/cli.ts commit` (оркестратор)."
+    commit-rail: " Коммит — через rail CLI `node <clone>/core/src/rails/cli.ts commit`."
+    gate-linter-ref: "детерминированный gate-линтер `core/src/design/gate-lint-cli.ts`"
+    critic-findings-format: ". Не лочишь, не правишь, не решаешь направление."
+    project-conventions-file: "AGENTS.md/CLAUDE.md"
+    description-suffix-executor: " Default execute agent when zone does not resolve a domain."
+    description-suffix-scaffolder: " Invoke on scaffold stage only (paths/signatures/stub tests/DoD)."
+    description-suffix-critic: " Invoke on design/audit stage."
+    description-suffix-explorer: " Invoke before design/execute to ground the contract."
+    description-suffix-producer: " Invoke on design stage."
+    ambient-note-executor: "Игнорируй ambient-правила окружения — следуй только этой инструкции и контракту."
+    ambient-note-scaffolder: "Игнорируй ambient-правила окружения — следуй только этой инструкции и контракту."
+    ambient-note-critic: "Игнорируй ambient-правила окружения — следуй только этой инструкции и переданным артефактам."
+    ambient-note-explorer: "Игнорируй ambient-правила окружения — следуй только этой инструкции."
+    ambient-note-producer: "Игнорируй любые ambient-правила окружения — следуй ТОЛЬКО этой инструкции и локнутому task-file."
+    discovery-note: "**Discovery через `ast-index` (Shell), не mass-grep:** `ast-index class/symbol/outline/callers/usages`."
+    discovery-note-executor: "**Discovery через `ast-index` (Shell), не mass-grep:** `ast-index class/symbol/outline/callers/usages`."
+    discovery-note-scaffolder: "**Discovery через `ast-index` (Shell), не mass-grep:** `ast-index class/symbol/outline/callers/usages`."
+    discovery-note-explorer: "**Discovery через `ast-index` (CLI через Shell) — ДЕФОЛТ, не mass-grep:** `ast-index search/class/symbol/usages/callers/implementations/outline/deps/api`. Перед чтением файла >500 строк — сначала `ast-index outline <file>`, читать точечно. grep — fallback там, где ast-index не покрывает."
+machine_seed:
+  template: null
+  location: hooks.json

@@ -1,0 +1,36 @@
+# canon/manifest.yml — тир1 (writable canon), ЧИСТЫЙ структурный stub (C4)
+#
+# Тир: 1 — canon/ (writable, только данные). AD-manifest-structural-place.
+# Назначение: декларация resource -> target-path (куда рендер материализует
+# каждый ресурс) + версия схемы манифеста. НИЧЕГО БОЛЬШЕ.
+#
+# Канон ПОДКЛЮЧЁН (T-canon-single-source): `canon/roles/*.md` — единственный
+# источник ролей, рендерится в портовые `.omp|.claude|.opencode/agents/`
+# (`node core/src/render/cli.ts render --out .`). Адаптеры (frontmatter-
+# формат/tool-маппинг/текстовые вставки per client) живут ВНЕ канона, в
+# `tools/adapters/*.yml` — не здесь, не в `canon/adapters/` (удалён).
+# Проектное (target-специфичные домен-роли/zonemap/delegation) — НЕ в каноне;
+# наполнение строго в самом проекте (`<project>/<port>/agents/*.md`,
+# `<project>/<port>/zonemap.yml`, `<project>/<port>/delegation.yml`).
+#
+# ЖЁСТКО (AD-manifest-structural-place, non-goal явно зафиксирован):
+# - Это НЕ реестр владения. Логика удаления осиротевших файлов НЕ
+#   реализуется здесь и нигде в текущем периметре.
+# - Рендер-движок (core/src/render/) ЭТОТ ФАЙЛ НЕ ЧИТАЕТ. Идемпотентность
+#   рендера достигается content-compare записью, не сверкой с манифестом.
+# - Любая функциональность сверх "resource -> target-path + schema_version"
+#   = non-goal для этого файла.
+#
+# Наполняет: может завести реальные записи по мере материализации ресурсов
+# (декларативно, как адрес), но логика движка от манифеста не зависит (см.
+# header выше). Реального наполнения пока нет (non-goal, см. выше).
+#
+# Schema (пример, НЕ активная конфигурация):
+#
+# schema_version: 1
+# resources: []
+#   # - resource: canon/roles/<name>.md
+#   #   target: .claude/agents/<name>.md
+
+schema_version: 1
+resources: []

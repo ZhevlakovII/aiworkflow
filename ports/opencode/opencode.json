@@ -1,0 +1,29 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "$comment": "OpenCode-порт OMP/CC флоу (docs/design/omp-to-opencode-port-2026-09-08.md). Enforcement-слой: plugins (.opencode/plugins) + permission. git-мутации энфорсит zone-guard plugin (tool.execute.before, throw-deny, стир к gated-рельсам); permission.bash deny — security-backstop. Рельсы (.opencode/tools/gated_*.ts) зовут git через Bun `$` (НЕ bash-тул) → plugin/permission их НЕ видят (аналог pi.exec в OMP). Advisor/queue/scheduler НЕ портированы (осознанно).",
+  "instructions": [".opencode/AGENTS.md"],
+  "permission": {
+    "edit": "allow",
+    "webfetch": "ask",
+    "bash": {
+      "*": "ask",
+      "rm -rf*": "deny",
+      "git push*": "deny",
+      "git merge*": "deny",
+      "git commit*": "deny",
+      "git add*": "deny",
+      "git reset*": "deny",
+      "git checkout*": "deny",
+      "git restore*": "deny",
+      "git clean*": "deny",
+      "git stash*": "deny",
+      "git rm*": "deny",
+      "*| sh": "deny",
+      "*|sh": "deny",
+      "*| bash": "deny",
+      "*|bash": "deny",
+      "nc *": "deny",
+      "ssh *": "deny"
+    }
+  }
+}

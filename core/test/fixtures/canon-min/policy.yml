@@ -1,0 +1,4 @@
+# Fixture policy (core/test/fixtures/canon-min/) — NOT the live canon/policy.yml.
+risk_classes:
+  - name: refactoring
+    escalation: none

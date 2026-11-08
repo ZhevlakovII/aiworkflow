@@ -1,0 +1,7 @@
+# Fixture delegation (core/test/fixtures/canon-min/) — NOT the live canon/delegation.yml.
+# D3: default = "native" (the adapter resolves this to self at render time).
+stages:
+  design:
+    backend: native
+  execute:
+    backend: native

@@ -1,5 +1,6 @@
-# Claude Code local state
+# Claude Code local state (consumer root and port-source copy if present)
 .claude/settings.local.json
+ports/claude/settings.local.json
 
 # IDE
 .idea/
@@ -13,8 +14,15 @@ desktop.ini
 __pycache__/
 *.py[cod]
 
-# Workflow runtime state (очередь/гейт/телеметрия/логи/дизайны — runtime, не версионим)
-/.workflow/
+# Workflow runtime state — ignore contents, but track tasks + stage journals
+# (Design C AD-workflow-versioning: tracked .workflow/tasks + .workflow/stages)
+/.workflow/*
+!/.workflow/tasks/
+!/.workflow/tasks/**
+!/.workflow/stages/
+!/.workflow/stages/**
+# Nested clones / core test runs also emit telemetry under core/.workflow
+core/.workflow/
 
 # Probe/test artifacts
 iso-proof*.txt

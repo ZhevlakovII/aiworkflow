@@ -1,0 +1,23 @@
+# Fixture adapter (core/test/fixtures/canon-min/) — TS-native T3 hermetic
+# fixture, NOT the live canon/adapters/claude.yml. `policy` is deliberately
+# NOT declared here -> capability-skip test.
+client: claude
+dir: ".claude"
+capabilities:
+  - roles
+  - zonemap
+  - delegation
+content:
+  frontmatter:
+    roles:
+      fields: [name, description, model, tools]
+      tools_format: csv
+  layout:
+    roles: "agents/{id}.md"
+    zonemap:
+      path: "zonemap.yml"
+      root: true
+    delegation: "delegation.yml"
+machine_seed:
+  template: "{}\n"
+  location: settings.local.json

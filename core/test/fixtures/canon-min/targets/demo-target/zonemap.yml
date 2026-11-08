@@ -1,0 +1,8 @@
+# Target-fixture zonemap (core/test/fixtures/canon-min/targets/demo-target/) —
+# differs from the top-level fixture zonemap.yml to prove target-config
+# override (target-dimension, universal-core-target-layer).
+map:
+  - glob: "target-src/**"
+    agent: target-worker
+default: null
+deny_domain: []

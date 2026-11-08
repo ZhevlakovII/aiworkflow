@@ -1,5 +1,5 @@
 // queue_batch — АВТОНОМНАЯ параллельная очередь через direct-spawn (Path A ×N). Альтернатива
-// queue_rpc.py + queue-runner (single-lead, последовательно). Здесь очередь спавнит N изолированных
+// core/src/ops/queue-rpc-cli.ts + queue-runner (single-lead, последовательно). Здесь очередь спавнит N изолированных
 // воркеров САМА (git-worktree клон на воркера) параллельно с потолком per-model, минуя lead.
 //
 // Поток: scan pending → build BatchTask[] (домен-агент/зона/модель) → fanoutBatch (параллельная
@@ -30,7 +30,7 @@ export interface QueueBatchOpts {
   statePath: string;     // абсолютный
   maxParallel: number;   // globalCap
   logsDir?: string;      // абсолютный; дефолт <cwd>/.workflow/logs
-  backend?: Backend;     // воркер-backend в клоне (claude|omp|codex); дефолт claude. Игнор если runInner задан.
+  backend?: Backend;     // воркер-backend в клоне (omp|omp-fanout); дефолт omp. Игнор если runInner задан.
 }
 interface TaskMeta { tid: string; capability: string; zone: ReturnType<typeof parseZone>; specPath: string | null; agent: string; taskRel: string; }
 export interface QueueBatchSummary { done: number; blocked: number; total: number; outcomes: Record<string, number>; }
@@ -68,11 +68,11 @@ function resolveSpec(cwd: string, text: string, tid: string): string | null {
 const loadState = (p: string): State => { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return {}; } };
 const saveState = (p: string, st: State): void => { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, JSON.stringify(st, null, 2), "utf8"); };
 
-/** Основной прогон. runInner инъектируем (тест = фейк); иначе inner = runWorker(opts.backend||claude). */
+/** Основной прогон. runInner инъектируем (тест = фейк); иначе inner = runWorker(opts.backend||omp). */
 export async function runQueueBatch(
   pi: WorkerPi, opts: QueueBatchOpts, runInner?: (ip: WorkerPi, rq: WorkerReq) => Promise<import("../.omp/tools/_lib/backend.ts").WorkerRes>,
 ): Promise<QueueBatchSummary> {
-  const inner = runInner ?? ((ip: WorkerPi, rq: WorkerReq) => runWorker(ip, opts.backend ?? "claude", rq));
+  const inner = runInner ?? ((ip: WorkerPi, rq: WorkerReq) => runWorker(ip, opts.backend ?? "omp", rq));
   const { cwd, tasksDir, statePath, maxParallel } = opts;
   const logsDir = opts.logsDir || path.resolve(cwd, ".workflow/logs");
   fs.mkdirSync(logsDir, { recursive: true });
@@ -177,7 +177,7 @@ async function cli(): Promise<number> {
   const tasksDir = path.resolve(cwd, arg("--tasks-dir", ".workflow/tasks"));
   const statePath = path.resolve(cwd, arg("--state", ".workflow/queue-state.json"));
   const maxParallel = Number(arg("--max-parallel", "1")) || 1;
-  const backend = arg("--backend", "claude") as Backend;
+  const backend = arg("--backend", "omp") as Backend;
   const pi: WorkerPi = { cwd, exec: mkExec() };
   console.log(`=== QUEUE-BATCH (direct-spawn): tasks=${tasksDir} globalCap=${maxParallel} backend=${backend} ===`);
   const s = await runQueueBatch(pi, { cwd, tasksDir, statePath, maxParallel, backend });

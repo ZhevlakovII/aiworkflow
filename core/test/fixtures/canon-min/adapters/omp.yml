@@ -1,0 +1,29 @@
+# Fixture adapter (core/test/fixtures/canon-min/) — TS-native T3 hermetic
+# fixture, NOT the live canon/adapters/omp.yml. Carries `policy` capability
+# (unlike claude) so the config-dump path gets a second, differently-shaped
+# client to render against.
+client: omp
+dir: ".omp"
+capabilities:
+  - roles
+  - zonemap
+  - delegation
+  - policy
+content:
+  frontmatter:
+    roles:
+      fields: [name, description, model, tools]
+      tools_format: csv_lower
+  layout:
+    roles: "agents/{id}.md"
+    zonemap: "zonemap.yml"
+    delegation: "delegation.yml"
+    policy: "policy.yml"
+machine_seed:
+  template: null
+  location: "~/.omp/agent/config.yml"
+shim:
+  mode: bundled
+  location: "hooks/_core"
+  style: in-process
+  entry: "hooks/pre/zone-guard.ts"

@@ -11,6 +11,13 @@
 #   3) install.sh - deploy product (preserves machine-head);
 #   4) post-install load-smoke (omp -p exit 0).
 #
+# --target <dir> is forwarded to flavor installers (A3 req 5) - omp/claude/opencode/cursor
+# each get their own project-scoped install under <dir>/.omp, <dir>/.claude, <dir>/.opencode,
+# <dir>/.cursor. --keep-agents is likewise forwarded (project-scoped: never overwrite an
+# agents/*.md already at dest - A3 req 4).
+#
+# Flow notes: `all` includes cursor; `both` stays omp+claude+opencode ONLY (no cursor).
+#
 # Usage:
 #   bash tools/setup.sh --check            # dry-run (writes nothing; lists what is installable)
 #   bash tools/setup.sh                     # full install (prompts per missing installable prereq)
@@ -19,9 +26,11 @@
 #   bash tools/setup.sh --install-missing   # alias of --yes (back-compat)
 #   bash tools/setup.sh --skip-smoke        # skip load-smoke
 #   bash tools/setup.sh --default-roles     # bind modelRoles non-interactively (defaults from models.yml)
+#   bash tools/setup.sh --target /proj      # project-scoped, all flavors
+#   bash tools/setup.sh --flow cursor
 set -euo pipefail
 
-CHECK=0; YES=0; SKIP_SMOKE=0; DEFAULT_ROLES=0; INSTALL_LIST=""; FLOW="all"; TARGET=""
+CHECK=0; YES=0; SKIP_SMOKE=0; DEFAULT_ROLES=0; INSTALL_LIST=""; FLOW="all"; TARGET=""; KEEP_AGENTS=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --check)           CHECK=1 ;;
@@ -34,27 +43,30 @@ while [ $# -gt 0 ]; do
         --flow)            shift; FLOW="${1:-all}" ;;
         --target=*)        TARGET="${1#--target=}" ;;
         --target)          shift; TARGET="${1:-}" ;;
+        --keep-agents)      KEEP_AGENTS=1 ;;   # project-scoped: never overwrite an agents/*.md already at dest (A3 req 4)
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
     shift
 done
-case "$FLOW" in omp|claude|opencode|all|both) ;; *) echo "invalid --flow: $FLOW (omp|claude|opencode|all)" >&2; exit 2 ;; esac
-DO_OMP=1; DO_CLAUDE=1; DO_OPENCODE=1
+case "$FLOW" in omp|claude|opencode|cursor|all|both) ;; *) echo "invalid --flow: $FLOW (omp|claude|opencode|cursor|all|both)" >&2; exit 2 ;; esac
+DO_OMP=0; DO_CLAUDE=0; DO_OPENCODE=0; DO_CURSOR=0
 case "$FLOW" in
-    omp)      DO_CLAUDE=0; DO_OPENCODE=0 ;;
-    claude)   DO_OMP=0;    DO_OPENCODE=0 ;;
-    opencode) DO_OMP=0;    DO_CLAUDE=0 ;;
-    all|both) ;;                     # all = omp + claude + opencode (both = deprecated alias of all)
+    omp)      DO_OMP=1 ;;
+    claude)   DO_CLAUDE=1 ;;
+    opencode) DO_OPENCODE=1 ;;
+    cursor)   DO_CURSOR=1 ;;
+    all)      DO_OMP=1; DO_CLAUDE=1; DO_OPENCODE=1; DO_CURSOR=1 ;;
+    both)     DO_OMP=1; DO_CLAUDE=1; DO_OPENCODE=1 ;;   # both deliberately excludes cursor
 esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 REPO="$(dirname "$SCRIPT_DIR")"
-CANON="$REPO/.omp"
+CANON="$REPO/ports/omp"
 GLOBAL="$HOME/.omp/agent"
 TEMPLATES="$SCRIPT_DIR/templates"
 
 echo "=== AI Workflow setup ==="
-echo "flow:   $FLOW  (omp=$DO_OMP claude=$DO_CLAUDE opencode=$DO_OPENCODE)"
+echo "flow:   $FLOW  (omp=$DO_OMP claude=$DO_CLAUDE opencode=$DO_OPENCODE cursor=$DO_CURSOR)"
 echo "canon:  $CANON"
 echo "global: $GLOBAL"
 echo ""
@@ -116,23 +128,19 @@ pkg_for() {
         java:dnf)      echo "sudo dnf install -y java-21-openjdk-devel" ;;
         java:pacman)   echo "sudo pacman -S --noconfirm jdk21-openjdk" ;;
         java:zypper)   echo "sudo zypper install -y java-21-openjdk-devel" ;;
-        python3:brew)   echo "brew install python@3.12" ;;
-        python3:apt-get) echo "sudo apt-get update && sudo apt-get install -y python3" ;;
-        python3:dnf)    echo "sudo dnf install -y python3" ;;
-        python3:pacman) echo "sudo pacman -S --noconfirm python" ;;
-        python3:zypper) echo "sudo zypper install -y python3" ;;
     esac
 }
 
 # --- 1. Prereqs ---
 # fields: name|cmd|verargs|required|hint
-# requiredness by flavor: OMP needs omp+node; Claude Code needs claude CLI. python/git/ast-index both.
+# requiredness by flavor: OMP needs omp+node; Claude Code needs claude CLI. git/ast-index both.
+# T7-6 (contract L-3): python prereq removed — the rails/drivers were all ported to node
+# (core/src/**), no tools/*.py left, nothing here shells out to python anymore.
 if [ "$DO_CLAUDE" = "1" ]; then claude_req=1; claude_hint="https://claude.ai/code (not npm; ToS-safe worker) - REQUIRED for claude flavor";
 else claude_req=0; claude_hint="https://claude.ai/code (not npm; needed only for claude delegation backend)"; fi
 prereqs=(
     "OMP (oh-my-pi)|omp|--version|$DO_OMP|https://omp.sh (native binary)"
     "Node.js >=24|node|--version|$DO_OMP|use nvm or distro pkg"
-    "Python 3.10+|python3|--version|1|distro python3 (rails/drivers tools/*.py)"
     "Claude CLI|claude|--version|$claude_req|$claude_hint"
     "OpenCode|opencode|--version|$DO_OPENCODE|https://opencode.ai (TUI/Desktop) - REQUIRED for opencode flavor"
     "git|git|--version|1|apt/brew install git"
@@ -256,9 +264,13 @@ else
 fi
 echo ""
 
-# --- 3. install.sh (deploy product; preserves machine-head) ---
+# --- 3. install.sh (deploy product; preserves machine-head; --target -> project-scoped OMP too, A3 req 5) ---
 echo "--- install.sh ---"
-if [ "$CHECK" = "1" ]; then bash "$SCRIPT_DIR/install.sh" --check; else bash "$SCRIPT_DIR/install.sh"; fi
+omp_args=""
+[ "$CHECK" = "1" ]       && omp_args="$omp_args --check"
+[ -n "$TARGET" ]         && omp_args="$omp_args --target $TARGET"
+[ "$KEEP_AGENTS" = "1" ] && omp_args="$omp_args --keep-agents"
+bash "$SCRIPT_DIR/install.sh" $omp_args
 echo ""
 
 # --- 4. Load-smoke (omp) ---
@@ -279,8 +291,9 @@ fi  # end if DO_OMP
 if [ "$DO_CLAUDE" = "1" ]; then
     echo "--- install-claude.sh ---"
     cc_args=""
-    [ "$CHECK" = "1" ] && cc_args="$cc_args --check"
-    [ -n "$TARGET" ]   && cc_args="$cc_args --target $TARGET"
+    [ "$CHECK" = "1" ]       && cc_args="$cc_args --check"
+    [ -n "$TARGET" ]         && cc_args="$cc_args --target $TARGET"
+    [ "$KEEP_AGENTS" = "1" ] && cc_args="$cc_args --keep-agents"
     bash "$SCRIPT_DIR/install-claude.sh" $cc_args
     echo ""
 fi
@@ -289,9 +302,21 @@ fi
 if [ "$DO_OPENCODE" = "1" ]; then
     echo "--- install-opencode.sh ---"
     oc_args=""
-    [ "$CHECK" = "1" ] && oc_args="$oc_args --check"
-    [ -n "$TARGET" ]   && oc_args="$oc_args --target $TARGET"
+    [ "$CHECK" = "1" ]       && oc_args="$oc_args --check"
+    [ -n "$TARGET" ]         && oc_args="$oc_args --target $TARGET"
+    [ "$KEEP_AGENTS" = "1" ] && oc_args="$oc_args --keep-agents"
     bash "$SCRIPT_DIR/install-opencode.sh" $oc_args
+    echo ""
+fi
+
+# --- 7. Cursor flavor (agents + skills + hooks.json) ---
+if [ "$DO_CURSOR" = "1" ]; then
+    echo "--- install-cursor.sh ---"
+    cu_args=""
+    [ "$CHECK" = "1" ]       && cu_args="$cu_args --check"
+    [ -n "$TARGET" ]         && cu_args="$cu_args --target $TARGET"
+    [ "$KEEP_AGENTS" = "1" ] && cu_args="$cu_args --keep-agents"
+    bash "$SCRIPT_DIR/install-cursor.sh" $cu_args
     echo ""
 fi
 

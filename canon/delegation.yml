@@ -1,0 +1,32 @@
+# canon/delegation.yml — тир1 (writable canon), schema-скелет
+#
+# Тир: 1 — canon/ (writable, только данные). AD-canon-dir-layout,
+# AD-three-tier-partition, AD-adapter-per-client.
+# Назначение: делегирование стадий (design/execute/...) на backend-модель.
+#
+# Правило D3 (LOCKED, план §"Разрешённые лидом" п.2): дефолт для
+# design/execute = "native" — внутренняя модель клиента (self). Внешние
+# провайдеры (codex/fanout) НЕ являются дефолтом канона — подключаются
+# только явным действием пользователя (per-invocation override), не как
+# запись в этом файле по умолчанию.
+# Резолв "native": каждый canon/adapters/<client>.yml трактует значение
+# "native" как "модель текущего клиента" (self) — адаптер, не движок,
+# решает, что значит "своя" модель для CC/OpenCode/OMP.
+#
+# Наполняет: Ф3 (движок читает delegation.yml для резолва backend'а),
+# Ф6 (миграция реальных delegation-профилей, если есть уникальный контент
+# в клиент-дирах — см. D5 в плане).
+#
+# Schema (пример, НЕ активная конфигурация):
+#
+# stages:
+#   design:
+#     backend: native   # D3 default; override только явным действием юзера
+#   execute:
+#     backend: native
+
+stages:
+  design:
+    backend: native
+  execute:
+    backend: native
