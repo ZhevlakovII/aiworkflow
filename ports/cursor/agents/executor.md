@@ -1,7 +1,7 @@
 ---
 name: "executor"
 description: "Implements within a locked contract, in its assigned zone only. Does not redesign; follows the contract. Returns file pointer + narrow summary. Default execute agent when zone does not resolve a domain."
-model: "sonnet"
+model: "composer-2.5-fast"
 tools: "Read, Grep, Shell, Write, Write"
 ---
 

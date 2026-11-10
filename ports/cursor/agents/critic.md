@@ -1,7 +1,7 @@
 ---
 name: "critic"
 description: "Independent critical pass over {source, spec, ADR} with fresh context. Emits findings by severity. Does not lock, edit, decide, or spawn. Invoke on design/audit stage."
-model: "opus"
+model: "composer-2.5-fast"
 tools: "Read, Grep"
 ---
 

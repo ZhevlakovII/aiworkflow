@@ -18,8 +18,9 @@
 | Flow opt-in + contract-key | plan/scaffold default off; ck12 strip id/supersedes/stage + binds; judge stage MISROUTE parity (2026-11-09) |
 | Domain roles collapse (phase 2) | `ports/*/agents` регенерированы рендером (base five); domain md удалены; drift test сверяет committed ports (2026-11-09) |
 | Global rollout + Composer seed (2026-11-10) | Global OMP/Cursor/DSH reinstall (base five); public `origin/main` republished; `smol`/seed cheap-default = xAI Composer (не local Qwen); matrix 4.7 на producer/slow/scaffolder |
+| Cursor model_map ↔ OMP (2026-11-10) | tools/adapters/cursor.yml: composer-2.5-fast / grok-4.7-high-fast (не sonnet/opus); global Cursor reinstall |
 
-Указатели: `.workflow/ledger/b-track-status-2026-10-30.md`, `layout-agents-cleanup-2026-11-02.md`, `core-ports-finish-2026-11-06.md`, `flow-rollout-composer-2026-11-10.md`.
+Указатели: `.workflow/ledger/b-track-status-2026-10-30.md`, `layout-agents-cleanup-2026-11-02.md`, `core-ports-finish-2026-11-06.md`, `flow-rollout-composer-2026-11-10.md`, `cursor-omp-model-align-2026-11-10.md`.
 
 ## Отложено навсегда
 

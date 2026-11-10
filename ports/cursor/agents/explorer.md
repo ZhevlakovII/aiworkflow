@@ -1,7 +1,7 @@
 ---
 name: "explorer"
 description: "Read-only discovery. Returns a curated inventory file, not a raw code dump. Cheap model. Invoke before design/execute to ground the contract."
-model: "sonnet"
+model: "composer-2.5-fast"
 tools: "Read, Grep, Shell"
 ---
 

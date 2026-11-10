@@ -1,7 +1,7 @@
 ---
 name: "producer"
 description: "Produces problem-space spec (SP-*) and solution-space ADR (AD-*) drafts with alternatives and a recommendation. Does not decide, lock, or read code directly. Invoke on design stage."
-model: "opus"
+model: "grok-4.7-high-fast"
 tools: "Read, Write"
 ---
 

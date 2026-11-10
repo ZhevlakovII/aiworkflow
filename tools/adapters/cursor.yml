@@ -1,4 +1,4 @@
-# tools/adapters/cursor.yml — вне канона (T-canon-single-source): декларация
+﻿# tools/adapters/cursor.yml — вне канона (T-canon-single-source): декларация
 # формата Cursor КАК ЦЕЛИ рендера. См. `tools/adapters/claude.yml` /
 # `tools/adapters/omp.yml` для механизм (`inserts`/`tool_map`/`model_map`).
 #
@@ -15,11 +15,13 @@ content:
     roles:
       fields: [name, description, model, tools]
       tools_format: csv
+      # Mirrors OMP composer/4.7 matrix; Cursor-native slugs (not xai-oauth/...).
       model_map:
-        "@default": "sonnet"
-        "@critic": "opus"
-        "@producer": "opus"
-        "@explorer": "sonnet"
+        "@default": "composer-2.5-fast"
+        "@critic": "composer-2.5-fast"
+        "@producer": "grok-4.7-high-fast"
+        "@explorer": "composer-2.5-fast"
+        "@scaffolder": "grok-4.7-high-fast"
       tool_map:
         read: "Read"
         grep: "Grep"
