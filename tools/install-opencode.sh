@@ -246,12 +246,12 @@ for f in $TOP_FILES; do
 done
 [ $CHECK -eq 0 ] && echo "[sync] AGENTS.md"
 
-# --- 1e. Project config seed: zonemap.yml / delegation.yml (project-scoped ONLY, A3 req 3) ---
+# --- 1e. Project config seed: delegation.yml only (zonemap NOT seeded) (project-scoped ONLY, A3 req 3) ---
 # Seeded from the canon SKELETON, NEVER from this repo's own filled
 # `.opencode/{zonemap,delegation}.yml` (FinManage's product data, not installer payload).
 # An existing project file is NEVER overwritten. Global mode installs neither.
 if [ $SCOPED -eq 1 ]; then
-  for cfgName in zonemap delegation; do
+  for cfgName in delegation; do
     s="$CANON_ROLE_ROOT/$cfgName.yml"
     d="$DEST/$cfgName.yml"
     if [ -f "$d" ]; then

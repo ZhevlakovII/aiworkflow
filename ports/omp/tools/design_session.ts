@@ -10,8 +10,8 @@ import { gateLint } from "./_lib/gatelint";
 import { ok, err } from "./_lib/result";
 import { runJudgeCli, type JudgeCliDeps } from "../../../core/src/stage/judge-cli.ts";
 import {
-  contractKey12,
   readJournal,
+  resolveContractKey,
   type StageJournalEvent,
 } from "../../../core/src/stage/journal.ts";
 
@@ -95,7 +95,14 @@ const factory: CustomToolFactory = (pi) => {
       const taskRel = path.relative(pi.cwd, taskPath).split(path.sep).join("/");
       const deps = prodDeps(pi.cwd);
       const arts = designArtifactRels(taskText, tid);
-      const ck12 = contractKey12(taskText);
+      const key = resolveContractKey(taskText, {
+        repoRoot: pi.cwd,
+        taskPath,
+        exists: fs.existsSync,
+        readFile: (p) => fs.readFileSync(p, "utf8"),
+      });
+      if (!key.ok) return err(key.error);
+      const ck12 = key.ck12;
 
       if (step === "begin") {
         const r = runJudgeCli(["design-begin", "--task", taskRel], deps);

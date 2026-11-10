@@ -1,7 +1,7 @@
 ---
 name: "scaffolder"
 description: "Scaffolds paths, signatures, stub tests, and a DoD checklist within a locked contract, in its assigned zone only. Scaffold stage only — no full impl, no ADR/spec rewrite. Returns file pointer + narrow summary. Invoke on scaffold stage only (paths/signatures/stub tests/DoD)."
-model: "sonnet"
+model: "@scaffolder"
 tools: "Read, Grep, Glob, Bash, Write, Edit"
 ---
 

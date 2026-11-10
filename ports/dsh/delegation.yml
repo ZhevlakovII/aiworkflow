@@ -1,0 +1,7 @@
+# Per-stage delegation backends (P1). Seeded into <proj>/.dsh-aiwf/ if absent (install-dsh).
+# Override priority: task-file (`design-backend:`/`execute-backend:`) > env
+#   (DSH_BACKEND_DESIGN / DSH_BACKEND_EXECUTE) > this file > default `dsh`.
+#
+# Values: `dsh` only. Fan-out backends (omp-fanout / dsh-fanout): unsupported — fail-closed in backend.ts.
+design: dsh
+execute: dsh

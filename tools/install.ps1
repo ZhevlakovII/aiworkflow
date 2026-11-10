@@ -21,7 +21,7 @@
        -KeepAgents is given, which freezes any file already present at the dest);
     2) copies RULES.md AGENTS.md WATCHDOG.md WATCHDOG.yml (global: Force-sync all;
        project: RULES.md seed-if-absent only — never Force-overwrite; others Force);
-    3) project-scoped ONLY: seeds zonemap.yml / delegation.yml from the canon
+    3) project-scoped ONLY: seeds delegation.yml from the canon
        SKELETON (`canon/{zonemap,delegation}.yml`) — ONLY if the project does not
        already have one (an existing file is NEVER touched). Global mode never
        installs these (A3 req 3) — this repo's own filled `.omp/{zonemap,
@@ -262,12 +262,12 @@ foreach ($f in $files) {
     }
 }
 
-# --- 3. Project config seed: zonemap.yml / delegation.yml (project-scoped ONLY, A3 req 3) ---
+# --- 3. Project config seed: delegation.yml only (zonemap NOT seeded) (project-scoped ONLY, A3 req 3) ---
 # Seeded from the canon SKELETON (empty map/native-default), NEVER from this repo's own
 # filled `.omp/{zonemap,delegation}.yml` (that's FinManage's product data, not installer
 # payload). An existing project file is NEVER overwritten. Global mode installs neither.
 if ($projectScoped) {
-    foreach ($cfgName in @("zonemap", "delegation")) {
+    foreach ($cfgName in @("delegation")) {
         $src = Join-Path $canonRoleRoot "$cfgName.yml"
         $dst = Join-Path $dest "$cfgName.yml"
         if (Test-Path $dst) {

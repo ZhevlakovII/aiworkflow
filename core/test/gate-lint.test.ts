@@ -37,6 +37,36 @@ test("gateLint: ears fixture — 4 expected findings (noshall/empty-trigger/bad-
   }
 });
 
+test("gateLint: fence-tag aliases sp/ad -> PASS (0 findings), counts 1/1/1", () => {
+  const spec = `\`\`\`sp
+id: SP-a
+source: task.md#L9
+statement: ok
+\`\`\`
+
+\`\`\`fr
+id: FR-a
+source: task.md#L9
+pattern: event
+statement: WHEN the user taps THE SYSTEM SHALL do a thing
+\`\`\`
+`;
+  const adr = `\`\`\`ad
+id: AD-a
+covers: SP-a
+statement: decision
+\`\`\`
+`;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gate-lint-"));
+  fs.writeFileSync(path.join(dir, "spec.md"), spec, "utf8");
+  fs.writeFileSync(path.join(dir, "adr.md"), adr, "utf8");
+  const g = gateLint(TASK, path.join(dir, "spec.md"), path.join(dir, "adr.md"), FX);
+  assert.equal(g.findings.length, 0);
+  assert.equal(g.nSp, 1);
+  assert.equal(g.nAd, 1);
+  assert.equal(g.nFr, 1);
+});
+
 test("gateLint: clean spec/adr (SP covered, valid FR only) -> PASS (0 findings)", () => {
   const spec = `\`\`\`spec
 id: SP-a

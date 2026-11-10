@@ -5,12 +5,16 @@
  * `.claude/commands/aiwf-execute.md` (instruction, not enforcement) — the
  * command now shells out here instead.
  *
- * Exit codes: 0 = resolved (single domain or none -> default agent),
+ * Exit codes (diagnostic only — execute transition uses soft resolve in
+ * `resolveExecuteAgent` / session tools and does NOT treat these as stage fail):
+ * 0 = resolved (single domain or none -> default agent),
  * 3 = ambiguous (zone spans >1 domain — lead decides, not the model),
  * 4 = denied-domain (an allow-glob falls under `deny-domain`, e.g. legacy
  * `source/**`), 2 = usage error (missing/unknown args, unreadable zonemap
- * file). Denied-domain is checked before ambiguous — an explicit legacy-zone
+ * file when path was forced). Denied-domain is checked before ambiguous — an explicit legacy-zone
  * hit is a stronger stop signal than "spans multiple valid domains".
+ * Missing file on the execute path must soft-resolve to
+ * executor via `resolveExecuteAgent`, not this CLI exit 2.
  *
  * Pure-core + thin-shell split (same pattern as `./zone-check-cli.ts` /
  * `../design/gate-lint-cli.ts`): `runZonemapCli(argv, deps)` is the

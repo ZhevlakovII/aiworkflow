@@ -9,7 +9,8 @@ import { zoneCheck } from "./_lib/zonecheck";
 import { ok, err } from "./_lib/result";
 import { nodeGitSeam } from "../../../core/src/rails/git-seam.ts";
 import { runJudgeCli, type JudgeCliDeps } from "../../../core/src/stage/judge-cli.ts";
-import { contractKey12 } from "../../../core/src/stage/journal.ts";
+import { resolveContractKey } from "../../../core/src/stage/journal.ts";
+import { scaffoldOptInFromTaskText } from "../../../core/src/design/critic-opt-in.ts";
 
 const STEPS = ["begin", "check", "done"] as const;
 type Step = (typeof STEPS)[number];
@@ -117,7 +118,19 @@ const factory: CustomToolFactory = (pi) => {
       const taskRel = path.relative(pi.cwd, taskPath).split(path.sep).join("/");
       const deps = prodDeps(pi.cwd);
       const z = parseZone(taskText);
-      const ck12 = contractKey12(taskText);
+      if (!scaffoldOptInFromTaskText(taskText)) {
+        return err(
+          "scaffold lever is off (scaffold: on|true|1|yes required on session task); no done fabricate",
+        );
+      }
+      const key = resolveContractKey(taskText, {
+        repoRoot: pi.cwd,
+        taskPath,
+        exists: fs.existsSync,
+        readFile: (p) => fs.readFileSync(p, "utf8"),
+      });
+      if (!key.ok) return err(key.error);
+      const ck12 = key.ck12;
 
       if (step === "begin") {
         const r = runJudgeCli(["scaffold-begin", "--task", taskRel], deps);

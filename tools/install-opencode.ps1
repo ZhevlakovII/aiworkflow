@@ -217,14 +217,14 @@ if (Test-Path $sAgentsMd) {
     }
 }
 
-# --- 1d. Project config seed: zonemap.yml / delegation.yml (project-scoped ONLY, A3 req 3) ---
+# --- 1d. Project config seed: delegation.yml only (zonemap NOT seeded) (project-scoped ONLY, A3 req 3) ---
 # Seeded from the canon SKELETON (`canon/{zonemap,delegation}.yml`), NEVER from this repo's
 # own filled `.opencode/{zonemap,delegation}.yml` (FinManage's product data, not installer
 # payload - copying those would clobber a real project config with an empty canon skeleton
 # on every re-run). An existing project file is NEVER overwritten. Global mode installs neither.
 if ($projectScoped) {
     $canonRoleRootCfg = Join-Path $repo 'canon'
-    foreach ($cfgName in @('zonemap', 'delegation')) {
+    foreach ($cfgName in @('delegation')) {
         $s = Join-Path $canonRoleRootCfg "$cfgName.yml"
         $d = Join-Path $dest "$cfgName.yml"
         if (Test-Path $d) {

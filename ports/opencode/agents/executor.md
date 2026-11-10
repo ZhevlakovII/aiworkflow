@@ -27,5 +27,7 @@ tools:
 
 **Discovery через тулы `code_search`/`outline`/`callers`, не mass-grep.** Bash не дан — контейнмент.
 
+Правила и конвенции проекта, когда они есть (AGENTS.md, RULES.md, port AGENTS, project agent overlay, линтеры/CI, на которые ссылается проект), обязательны. При конфликте правила проекта важнее общих идиом роли.
+
 Возврат: pointer на изменённые файлы + узкая сводка + явные scope-escapes/uncertainty. Не тело.
 Не проси обхода zone-guard. Не трогаешь `.git`/`.opencode`/`.workflow`/чужие зоны. Коммит — не сам, а через рельс `gated_commit` (оркестратор).

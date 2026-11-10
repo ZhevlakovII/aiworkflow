@@ -42,3 +42,13 @@ test("AGENTS.md: execute_session is default; no LEGACY execute_worker", () => {
   assert.doesNotMatch(md, /LEGACY[\s\S]{0,120}execute_worker/, "no LEGACY execute_worker paragraph");
   assert.doesNotMatch(md, /execute_worker\s*\(/, "no execute_worker call-site docs");
 });
+
+
+test("execute_session: resolveContractKey + execute-only MISROUTE + zone from task", () => {
+  const src = readFileSync(SESSION_SRC, "utf-8");
+  assert.match(src, /resolveContractKey/, "shared contract key");
+  assert.match(src, /MISROUTE/);
+  assert.ok(src.includes("execute"), "execute stage identity");
+  assert.ok(src.includes("parseZone(taskText)"), "zone from passed task");
+  assert.equal(src.includes("contractKey12("), false);
+});

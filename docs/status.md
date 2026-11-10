@@ -1,21 +1,25 @@
 # Статус (2026-11)
 
-**Core + flow + ограничения** для OMP / Cursor / OpenCode: **закрыты** (2026-11-06). Лайв-смоки = install в consumer → пробы (см. `.workflow/ledger/core-flow-complete-2026-11-06.md`, smoke Forza `.workflow/ledger/smoke-live-omp-forza-2026-11-08.md`).
+**Core + flow + ограничения** для OMP / Cursor / OpenCode: **закрыты** (2026-11-06). **DSH (P0):** `ports/dsh/` Cordis-плагин + `install-dsh` + `dshGuardDecision` (2026-11-09, execute-ports-dsh-p0). **DSH (P1):** merge + ast-index discovery + telemetry + `setup -Flow all` включает dsh (execute-ports-dsh-p1, 2026-11-09). **DSH (P2):** plan/synthesize/archive_spec + queue-runner + WATCHDOG doc + fan-out unsupported (execute-ports-dsh-p2, 2026-11-09). Лайв-смоки = install в consumer → пробы (см. `.workflow/ledger/core-flow-complete-2026-11-06.md`, smoke Forza `.workflow/ledger/smoke-live-omp-forza-2026-11-08.md`, smoke FinManage OMP+Cursor `.workflow/ledger/smoke-live-omp-cursor-finmanage-2026-11-09.md`).
 
 ## Заземлилось
 
 | Область | Состояние |
 |---------|-----------|
 | Ports-as-SRC | `ports/<client>/` = SRC инсталлера; нет root dogfood `.omp` / `.cursor` |
-| Стадия scaffold | judge `scaffold-*` + роль `scaffolder`; `scaffold_session` на OMP/OC; Cursor skill `aiwf-scaffold` |
+| Стадия scaffold | **opt-in** (default off); judge `scaffold-*` + роль `scaffolder` when on; `scaffold_session` OMP; execute-begin не требует scaffold-done если off |
 | Session write protected (SWP) | command-hook: deny Write/Edit на защищённые stage-пути |
 | Lead freeze (execute-open) | заморозка правок operator, пока открыта стадия execute |
 | Маркер `by:judge` | mutual exclusion: begin без legacy-зоны; grants apply на входе judge |
 | Path + bash bridge | адаптеры нормализуют тулы; bash/PS → core `ompGuardDecision` / `opencodeGuardDecision` до regex-хвостов харнесса |
 | Shell SWP / freeze | redirect-таргеты bash/PS под SWP/freeze |
 | Design C B-track | `design_session` / `execute_session` + judge + attribution fail-closed (OMP) |
+| Domain roles collapse (phase 1) | Шесть `*-developer` убраны из канона; default execute = `executor`; zonemap optional, not seeded (2026-11-09) |
+| Flow opt-in + contract-key | plan/scaffold default off; ck12 strip id/supersedes/stage + binds; judge stage MISROUTE parity (2026-11-09) |
+| Domain roles collapse (phase 2) | `ports/*/agents` регенерированы рендером (base five); domain md удалены; drift test сверяет committed ports (2026-11-09) |
+| Global rollout + Composer seed (2026-11-10) | Global OMP/Cursor/DSH reinstall (base five); public `origin/main` republished; `smol`/seed cheap-default = xAI Composer (не local Qwen); matrix 4.7 на producer/slow/scaffolder |
 
-Указатели: `.workflow/ledger/b-track-status-2026-10-30.md`, `layout-agents-cleanup-2026-11-02.md`, `core-ports-finish-2026-11-06.md`.
+Указатели: `.workflow/ledger/b-track-status-2026-10-30.md`, `layout-agents-cleanup-2026-11-02.md`, `core-ports-finish-2026-11-06.md`, `flow-rollout-composer-2026-11-10.md`.
 
 ## Отложено навсегда
 

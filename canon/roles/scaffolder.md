@@ -1,7 +1,7 @@
 ---
 name: scaffolder
 description: Scaffolds paths, signatures, stub tests, and a DoD checklist within a locked contract, in its assigned zone only{{insert:worktree-note}}. Scaffold stage only — no full impl, no ADR/spec rewrite. Returns file pointer + narrow summary.{{insert:description-suffix-scaffolder}}
-model: "@default"
+model: "@scaffolder"
 tools:
   - read
   - grep

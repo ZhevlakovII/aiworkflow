@@ -22,7 +22,7 @@
 # явно true/false (containment по умолчанию: `bash` дропается tool_map'ом
 # для всех ролей, кроме explorer — там его возвращает `tool_overrides.add`,
 # т.к. explorer не имеет Bash в канон-списке, но получает его нативно на
-# OpenCode; исполнители/домен-агенты канон-Bash несут, но OpenCode их
+# OpenCode; executor/scaffolder канон-Bash несут, но OpenCode их
 # контейнит без Bash — рендер намеренно "теряет" write:true у critic и
 # добавляет explicit-false остальным ролям относительно рук-правленых файлов
 # ДО этой задачи — это FIX капабилити-утечки, не регрессия, см. отчёт задачи).

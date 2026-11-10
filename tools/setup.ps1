@@ -35,8 +35,8 @@ param(
     [string[]]$Install = @(),    # install only these (by cmd name), no prompt
     [switch]$SkipSmoke,
     [switch]$DefaultRoles,       # bind modelRoles non-interactively (defaults from models.yml)
-    [ValidateSet('omp','claude','opencode','cursor','all','both')]
-    [string]$Flow = 'all',       # which flow flavor: OMP / Claude / OpenCode / Cursor / all (both = omp+claude+opencode, NO cursor)
+    [ValidateSet('omp','claude','opencode','cursor','dsh','all','both')]
+    [string]$Flow = 'all',       # which flow flavor: OMP / Claude / OpenCode / Cursor / DSH / all (both = omp+claude+opencode, NO cursor)
     [string]$Target = '',        # project dir for a project-scoped install (default global)
     [switch]$KeepAgents          # project-scoped: never overwrite an agents/*.md already at dest (A3 req 4)
 )
@@ -46,6 +46,7 @@ $doOmp      = ($Flow -eq 'omp'      -or $Flow -eq 'all' -or $Flow -eq 'both')
 $doClaude   = ($Flow -eq 'claude'   -or $Flow -eq 'all' -or $Flow -eq 'both')
 $doOpencode = ($Flow -eq 'opencode' -or $Flow -eq 'all' -or $Flow -eq 'both')
 $doCursor   = ($Flow -eq 'cursor'   -or $Flow -eq 'all')   # both deliberately excludes cursor
+$doDsh      = ($Flow -eq 'dsh'      -or $Flow -eq 'all')
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Repo      = Split-Path -Parent $ScriptDir
@@ -92,7 +93,7 @@ function PkgFor([string]$cmd) {
 }
 
 Write-Host "=== AI Workflow setup ===" -ForegroundColor Cyan
-Write-Host "flow:   $Flow  (omp=$doOmp claude=$doClaude opencode=$doOpencode cursor=$doCursor)" -ForegroundColor Cyan
+Write-Host "flow:   $Flow  (omp=$doOmp claude=$doClaude opencode=$doOpencode cursor=$doCursor dsh=$doDsh)" -ForegroundColor Cyan
 Write-Host "canon:  $Canon"
 Write-Host "global: $Global`n"
 
@@ -107,6 +108,7 @@ $prereqs = @(
     @{ name='Node.js >=24';   cmd='node';      args=@('--version'); required=$doOmp;    hint='winget install OpenJS.NodeJS  (or nvm)' },
     @{ name='Claude CLI';     cmd='claude';    args=@('--version'); required=$doClaude; hint=$claudeHint },
     @{ name='OpenCode';       cmd='opencode';  args=@('--version'); required=$doOpencode; hint='https://opencode.ai (TUI/Desktop) - REQUIRED for opencode flow flavor' },
+    @{ name='DSH (DeepSeek)'; cmd='dsh';      args=@('--version'); required=$doDsh;      hint='DeepSeek Harness (Cordis) - REQUIRED for dsh flow flavor' },
     @{ name='git';            cmd='git';       args=@('--version'); required=$true;     hint='winget install Git.Git' },
     @{ name='ast-index';      cmd='ast-index'; args=@('version');   required=$true;     hint='install ast-index CLI (Track A discovery)' },
     @{ name='Java 21 (opt)';  cmd='java';      args=@('-version');  required=$false;    hint='only for KMP target (gradle test-cmd)' },
@@ -215,7 +217,7 @@ if ($Check) {
         } else {
             Set-Content -Path $cfgDst -Value $tpl -Encoding UTF8 -NoNewline
         }
-        Write-Host "  [seed] config.yml modelRoles <- template (Qwen cheap-default)" -ForegroundColor Yellow
+        Write-Host "  [seed] config.yml modelRoles <- template (composer/4.7 matrix)" -ForegroundColor Yellow
     } else { Write-Host "  [keep] modelRoles present - untouched" -ForegroundColor DarkGray }
     Write-Host ""
 }
@@ -294,7 +296,19 @@ if ($doOpencode) {
     Write-Host ""
 }
 
-# --- 7. Cursor flavor (agents + skills + hooks.json) ---
+# --- 7. DSH flavor (Cordis plugin + .dsh-aiwf overlay) ---
+if ($doDsh) {
+    $dshInstaller = Join-Path $ScriptDir 'install-dsh.ps1'
+    Write-Host "--- install-dsh.ps1 ---" -ForegroundColor Cyan
+    $dshArgs = @()
+    if ($Check)  { $dshArgs += '-Check' }
+    if ($Target) { $dshArgs += '-Target'; $dshArgs += $Target }
+    & powershell -ExecutionPolicy Bypass -File $dshInstaller @dshArgs
+    if ($LASTEXITCODE -ne 0) { Write-Host "install-dsh.ps1 failed (exit $LASTEXITCODE)" -ForegroundColor Red; exit $LASTEXITCODE }
+    Write-Host ""
+}
+
+# --- 8. Cursor flavor (agents + skills + hooks.json) ---
 if ($doCursor) {
     $cuInstaller = Join-Path $ScriptDir 'install-cursor.ps1'
     Write-Host "--- install-cursor.ps1 ---" -ForegroundColor Cyan

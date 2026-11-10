@@ -4,11 +4,14 @@
 AD-canon-dir-layout.
 
 **Подключено к рантайму (T-canon-single-source).** Это ЕДИНСТВЕННЫЙ
-источник role-defs: `producer`, `critic`, `explorer`, `scaffolder`,
-`executor` + 6 обобщённых домен-executor'ов (`kmp-developer`, `go-developer`,
-`gradle-developer`, `ktor-developer`, `rust-developer`, `swift-developer`)
-— 11 ролей. `scaffolder` — только стадия scaffold (каркас); reuse на
-execute запрещён prose роли.
+источник role-defs: пять базовых ролей — `producer`, `critic`, `explorer`,
+`scaffolder`, `executor`. Доменный исполнитель **не** в каноне: только
+consumer overlay (`<project>/<port>/agents/<name>.md`) **вместе** с записью
+заполненной project zonemap, которая называет этого агента. Оверлей без
+карты execute не перехватывает; без файла карты / пустая карта / miss /
+deny / ambiguous → `executor`. `scaffolder` — только стадия scaffold
+(каркас); reuse `executor` и любого доменного/потребительского execute-актора
+на scaffold запрещён prose роли и scaffold ADR.
 Frontmatter и тело — нейтральные: без имён инструментов/провайдеров, без
 проектных путей/имён. Портовые различия (frontmatter-формат, tool-имена,
 ambient-ignore/discovery/zone-guard/commit-rail формулировки) — НЕ в этих
@@ -20,7 +23,8 @@ per client). Портовые `agents/*.md` (`.omp/agents/`, `.claude/agents/`,
 `.opencode/agents/`) для перечисленных ролей — СГЕНЕРИРОВАННЫЙ артефакт:
 `node core/src/render/cli.ts render --out .` из корня репо. Ручная правка
 портовой копии = drift, ловится `core/test/canon-render-drift.test.ts`.
-Порты здесь не правятся — проекция после фазы 1 (canon+core).
+Порты здесь не правятся — проекция после фазы 1 (canon+core); phase 2
+регенерирует деревья портов, если разъехались.
 
 **Политика ролей (intake human-review):** model-`critic` — **default off**,
 включение только явным opt-in (task frontmatter / CLI `--critic`); роль
@@ -28,7 +32,8 @@ per client). Портовые `agents/*.md` (`.omp/agents/`, `.claude/agents/`,
 (spec±ADR) с grounding через explorer/inventory — **не** harness Plan Mode.
 Макро-стадия `plan` (нарезка зон/тикетов) ≠ Plan Mode харнесса. Prose роли
 целит ≤~60 строк; пайплайн стадий / class→critic таблицы — в механике, не
-в role prose.
+в role prose. Приоритет правил проекта над общими идиомами — в prose
+`executor` и обязателен для любого consumer domain-актора.
 
 Портовые файлы без нейтрального канон-смысла (OpenCode `.opencode/agents/
 aiwf.md` — lead tool-gate, специфичный для OpenCode-примary-агента) в каноне

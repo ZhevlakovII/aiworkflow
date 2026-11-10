@@ -7,6 +7,7 @@
 | `omp` | Oh My Pi (нативные тулы/хуки/агенты) | глобал `~/.omp/agent/` (или проект `-Target`) | `-Flow omp` |
 | `claude` | Claude Code (субагенты + slash-команды + hooks) | глобал `~/.claude/` (или проект `-Target`) | `-Flow claude` |
 | `opencode` | OpenCode (TS-тулы + плагины + агенты + команды) | глобал `~/.config/opencode/` (или проект `--target`) | `-Flow opencode` / `--flow opencode` |
+| `dsh` | DeepSeek Harness (Cordis plugin + overlay) | профиль `~/.dsh/profiles/<profile>/plugins/aiwf/` + проект `.dsh-aiwf/` | `-Flow dsh` / `install-dsh.{sh,ps1}` |
 | `all` (**дефолт**) | omp + claude + opencode | все три | без флага (`both` — deprecated алиас `all`) |
 
 Ключевые решения / порты-as-SRC: [`docs/keys.md`](docs/keys.md). Статус: [`docs/status.md`](docs/status.md).  
@@ -43,8 +44,9 @@ enforcement-хуки + `settings.json`). Дефолт — глобал `~/.claud
 | **PowerShell 5.1+** _или_ **bash** (rsync опц.) | installer (Windows / linux+macos) | — |
 
 Опционально:
-- **LM Studio + Qwen** (напр. `qwen3.6-35b-a3b`) — дешёвый локальный lead-по-умолчанию (Pool B, ~free).
-  Endpoint прописан в `~/.omp/agent/models.yml`. Без него укажи lead явно (`--model`), но потечёт бюджет.
+- **LM Studio + Qwen** (напр. `qwen3.6-35b-a3b`) — опциональный **локальный** провайдер (Pool B, ~free), **не** дефолтный lead.
+  Endpoint прописан в `~/.omp/agent/models.yml`; перепривязка ролей — через `setup_roles` / ручное редактирование `modelRoles`.
+  Дефолтный seed installer'а: xAI Composer (`grok-composer-2.5-fast` на большинстве ролей; `grok-4.7` на producer/slow/scaffolder).
 - **Java 21 + Android SDK** — если target = KMP-проект (для gradle test-cmd).
 - **codex CLI + OpenAI-auth** — только для `codex_worker` (кросс-вендор seam). `npm i -g @openai/codex` + `codex login`.
 
@@ -348,10 +350,12 @@ node core/src/ops/queue-rpc-cli.ts --cwd <project> [--tasks-dir DIR] [--state FI
 
 ## 8. Machine-специфика (не в гите продукта)
 
-`~/.omp/agent/models.yml` (провайдеры/endpoint LM Studio) и `modelRoles` в `~/.omp/agent/config.yml`
-(`default/producer/critic/explorer/advisor` = Qwen **намеренно**, INV-9 cheap-дефолт) — редактируются
-на машине, installer их **сохраняет** (не перезаписывает machine-head). Сильная модель заходит через
-`claude -p` субпроцесс в `design_worker`/`execute_worker`, не через эти роли.
+`~/.omp/agent/models.yml` (провайдеры, в т.ч. опциональный LM Studio) и `modelRoles` в `~/.omp/agent/config.yml`
+— редактируются на машине; installer **сохраняет** machine-head (не перезаписывает при повторной установке).
+Seed из `tools/templates/machine-head.yml.example` (только если `modelRoles` ещё нет):
+`default/smol/critic/explorer/advisor` → `xai-oauth/grok-composer-2.5-fast`; `producer/slow/scaffolder` → `xai-oauth/grok-4.7`.
+Composer — временный cheap/default tier; дорогой рычаг (4.7, fan-out, critic, slow) — по классу задачи и blast-radius
+через нативные `modelRoles` и session-тулы (`design_session` / `scaffold_session` / `execute_session`), не через устаревшие worker-тулы.
 
 ## 9. Backend делегации (выбор исполнителя design/execute)
 

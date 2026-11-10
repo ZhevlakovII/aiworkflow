@@ -1,0 +1,26 @@
+# tools/adapters/dsh.yml — render target for DeepSeek Harness (Cordis) voice.
+# Project overlay dir (not profile plugins tree): .dsh-aiwf/
+client: dsh
+dir: ".dsh-aiwf"
+capabilities:
+  - roles
+content:
+  frontmatter:
+    roles:
+      fields: [name, description, model, tools, read-summarize]
+      tools_format: csv_lower
+  layout:
+    roles: "agents/{id}.md"
+  inserts:
+    worktree-note: " (isolated worktree)"
+    zone-guard-dir: ".dsh-aiwf"
+    discovery-note: "**Discovery через ast-index** (не mass-grep): `ast-index class/symbol/outline/callers/usages`."
+    discovery-note-explorer: "**Discovery через ast-тулы — ДЕФОЛТ:** `code_search`, `outline`, `callers` (P1)."
+    gate-linter-ref: "детерминированный gate-линтер"
+    critic-findings-format: ". Не лочишь, не правишь, не решаешь направление."
+    commit-rail-lead: " Коммит — через рельс `gated_commit` (оркестратор)."
+    commit-rail: " Коммит — через рельс `gated_commit`."
+    project-conventions-file: "AGENTS.md в .dsh-aiwf/"
+machine_seed:
+  template: null
+  location: null

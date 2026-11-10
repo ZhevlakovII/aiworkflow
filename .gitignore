@@ -34,3 +34,6 @@ iso-proof*.txt
 
 # Target-полигон (FinManageApp — вложенный репо со своим git, не версионим в AIWorkflow)
 test-project/
+
+# DSH project overlay (installer stamps from ports/dsh; not SRC)
+.dsh-aiwf/

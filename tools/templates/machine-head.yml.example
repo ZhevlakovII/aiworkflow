@@ -1,15 +1,18 @@
 # MACHINE-HEAD template — bootstrap seeds this as the head of ~/.omp/agent/config.yml when no
 # modelRoles: block exists yet. NOT product/git canon (installer PRESERVES it, never overwrites).
-# All OMP-native roles = local Qwen INTENTIONALLY (cheap-default, ToS-safe). Strong model enters
-# via `claude -p` subprocess in design_worker/execute_worker — NOT through these roles.
-# These are seed defaults; setup runs tools/setup_roles.ts to (re)bind each role to a model from your
+# Seed defaults: xAI Composer as temporary cheap/default tier (NOT local Qwen as lead-default).
+# producer/slow/scaffolder = grok-4.7; other native roles = grok-composer-2.5-fast.
+# Strong routing by class/blast-radius uses fan-out/critic/slow via native modelRoles and session tools.
+# These are seed defaults only; setup runs tools/setup_roles.ts to (re)bind each role from your
 # REAL models.yml (interactive) and to warn about unset/unknown roles. EDIT here or let the binder do it.
+# Local LM Studio + Qwen remains optional via models.yml.example — not the role seed default.
 modelRoles:
-  default:  lm-studio/qwen/qwen3.6-35b-a3b
-  smol:     lm-studio/qwen/qwen3.6-35b-a3b
-  slow:     lm-studio/qwen/qwen3.6-35b-a3b
-  producer: lm-studio/qwen/qwen3.6-35b-a3b
-  critic:   lm-studio/qwen/qwen3.6-35b-a3b
-  explorer: lm-studio/qwen/qwen3.6-35b-a3b
-  advisor:  lm-studio/qwen/qwen3.6-35b-a3b   # pinned Qwen (soft-overlay, P8 Track B) — do NOT flip to strong
+  default:  xai-oauth/grok-composer-2.5-fast
+  smol:     xai-oauth/grok-composer-2.5-fast
+  slow:     xai-oauth/grok-4.7
+  producer: xai-oauth/grok-4.7
+  scaffolder: xai-oauth/grok-4.7
+  critic:   xai-oauth/grok-composer-2.5-fast
+  explorer: xai-oauth/grok-composer-2.5-fast
+  advisor:  xai-oauth/grok-composer-2.5-fast
 theme:

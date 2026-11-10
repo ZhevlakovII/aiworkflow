@@ -102,6 +102,8 @@ function probePath(glob: string): string {
  * `ambiguous=true` when the zone spans >1 distinct domain (lead decides, not
  * the model). `denied` lists allow-globs that fall under `deny-domain`
  * (legacy zone — flagged, not silently absorbed into a match).
+ * Any denied allow-glob wins over partial domain matches: agent = defaultAgent
+ * (executor), denied signal kept, stage not failed (roles-domain-collapse ADR).
  */
 export function resolveAgent(allowGlobs: readonly string[], zm: ZoneMap): ResolveAgentResult {
   const denyRes = zm.denyDomain.map((g) => globToRegExp(g));
@@ -125,11 +127,46 @@ export function resolveAgent(allowGlobs: readonly string[], zm: ZoneMap): Resolv
   }
 
   const matched = [...hits];
+  // Deny beats partial match of neighboring globs (ADR AD-keep-filled-routing-refine-denied).
+  if (denied.length > 0) {
+    return { agent: zm.defaultAgent, ambiguous: false, matched, denied };
+  }
   if (matched.length === 1) return { agent: matched[0], tech: [...techs][0], ambiguous: false, matched, denied };
   if (matched.length === 0) return { agent: zm.defaultAgent, ambiguous: false, matched, denied };
   return { agent: zm.defaultAgent, ambiguous: true, matched, denied }; // mixed domains -> lead splits by zone
 }
 
+/** Hard load — throws if path missing/unreadable (diagnostic callers). */
 export function loadZoneMap(path: string): ZoneMap {
   return parseZoneMap(readFileSync(path, "utf8"));
+}
+
+/** Empty map with executor default (missing-file / soft-fail shape). */
+export function emptyZoneMap(): ZoneMap {
+  return { map: [], defaultAgent: "executor", denyDomain: [] };
+}
+
+/**
+ * Soft load for execute path: missing/unreadable file → null (never throws).
+ * Callers resolve null as executor via emptyZoneMap / resolveExecuteAgent.
+ */
+export function tryLoadZoneMap(path: string): ZoneMap | null {
+  try {
+    return loadZoneMap(path);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Execute-oriented resolve: missing zonemap file → executor, no throw/fail.
+ * Denied / ambiguous still return executor with signals on the result.
+ * Diagnostic CLI may still exit non-zero when a path is forced; this helper does not.
+ */
+export function resolveExecuteAgent(
+  allowGlobs: readonly string[],
+  zonemapPath: string,
+): ResolveAgentResult {
+  const zm = tryLoadZoneMap(zonemapPath) ?? emptyZoneMap();
+  return resolveAgent(allowGlobs, zm);
 }

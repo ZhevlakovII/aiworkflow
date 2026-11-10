@@ -72,8 +72,8 @@ GitHub-release бинарь на mac/linux), `node`/`git`/`java` (pkg-mgr), `cod
   capability-probe перед merge. Модель физически не может протащить плохое состояние.
 - **Автономия по лестнице.** L1 (до коммита) → L2 (до PR) → L3 (merge) — каждый уровень открывается
   только тем, что построил enforcement-шим. Автономная очередь крутится внутри одного OMP-процесса.
-- **Токен-экономия (cost per verified outcome).** Дешёвый локальный Qwen — дефолт-lead; сильная
-  модель (claude) заходит субпроцессом ровно там, где нужна семантика (design/critic/execute).
+- **Токен-экономия (cost per verified outcome).** Composer (xAI) — временный cheap/default tier для нативных ролей;
+  сильный рычаг (4.7, fan-out, critic, slow) — только по классу задачи и blast-radius.
 - **Кросс-харнесс перенос.** Универсален только контракт-данные (plain-файлы в репо). Воркером может
   быть OMP-субагент ИЛИ чужой харнесс-subprocess (`claude -p`, `codex exec`).
 

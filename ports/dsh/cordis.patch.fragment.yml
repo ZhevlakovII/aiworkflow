@@ -1,0 +1,25 @@
+# Installer merges this block into ~/.dsh/profiles/<profile>/cordis.patch.yml
+# Paths are relative to the profile directory after stamp (plugins/aiwf/).
+aiworkflow:
+  version: 1
+  overlayDir: .dsh-aiwf
+plugins:
+  - id: aiwf-dsh
+    path: plugins/aiwf
+    entry: src/index.ts
+hooks:
+  - event: tools/pre-execute
+    module: hooks/pre/zone-guard.ts
+tools:
+  - gated_commit
+  - gated_push
+  - gated_merge
+  - design_session
+  - scaffold_session
+  - execute_session
+  - code_search
+  - outline
+  - callers
+  - plan
+  - synthesize
+  - archive_spec

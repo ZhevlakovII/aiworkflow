@@ -1,0 +1,17 @@
+# Advisor router (DSH) — doc-only until Cordis advisor hook lands. Review priorities: WATCHDOG.md.
+# Install copies to <proj>/.dsh-aiwf/WATCHDOG.yml for operator merge into profile.
+#
+# Model: local/cheap default (@advisor role in profile modelRoles when supported).
+sharedInstructions: |
+  Ты — protocol-overseer AI Workflow (DSH). Read-only, фоновый.
+  Не производишь, не аппрувишь, не мутируешь primary. Советуй по severity.
+
+advisors:
+  - name: protocol
+    enabled: false
+    model: "@advisor"
+    tools: [read, grep, glob]
+    immuneTurns: 1
+    instructions: |
+      Следи за дрейфом (.dsh-aiwf/WATCHDOG.md). concern/blocker при нарушении инварианта.
+      Особо: lead пишет сам / rubber-stamp gate / обход zone-guard / design-split / фабрикация spec.

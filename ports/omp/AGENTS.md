@@ -17,8 +17,10 @@ Execute-задача → домен-агент резолвится **детер
 - **Не safety-рельс, а expertise-routing:** commit-rail (zone-check в `execute_session` step=check и на `gated_commit`) энфорсит зону независимо от того, кто писал. Домен-агент = качество/семантика, не containment.
 
 ## Стадии
-`classify → design(детерминир. драйвер) → plan(нарезка зон) → scaffold → execute(fan-out воркеров) → gate → report`.
-Класс задачи включает подмножество: `trivial` без design; `feature` лёгкий design; `security`/`migration` — critic обязателен + rollback.
+**Дефолт:** `classify → design? → execute → gate → report`.
+**Каталог (7):** classify · design · plan · scaffold · execute · gate · report.
+Рычаги (default off, как critic): `plan`/`plan-opt-in`, `scaffold`/`scaffold-opt-in`, `critic`/`critic-opt-in` — truthy `on`/`true`/`1`/`yes`. Scaffold on → роль scaffolder + journal; execute-begin требует scaffold-done ok. Scaffold off → execute без scaffold-done и без fake journal.
+Класс: `trivial` может без design (если scaffold off); `feature`/прочие — design-lock нужен. Critic **не обязателен** по class — только явный opt-in. Security/migration: rollback/L3 policy, не «critic mandatory».
 
 **Design-стадию НЕ реализует lead.** Default path = **`design_session`** + native in-session producer/critic (B2a; R1 spawn-map: producer required, critic conditional, explorer optional). Lead диспатчит шаги тула и спавнит роли; модели внутри `design_session` не вызываются:
 ```
@@ -26,7 +28,7 @@ design_session(step="begin"|"gate"|"critic-record"|"lock", task="<design-task-fi
 ```
 Поток: `begin` → spawn producer → `gate` (gateLint + judge; 1 bounce-retry) → spawn critic → `critic-record` (budget 1) → `lock` → `gated_commit`. Механический гейт — `gateLint` (B1 judge journal). Locked только при gate PASS + нет blocker/major от critic.
 
-**Scaffold-стадию тоже НЕ ведёт lead.** Default path = **`scaffold_session`** + native in-session `scaffolder` (fixed agent; no zonemap domain resolve). Между design lock и execute. Lead диспатчит шаги тула и спавнит scaffolder; модели внутри `scaffold_session` не вызываются:
+**Scaffold (opt-in).** Когда рычаг on: НЕ ведёт lead. Default path = **`scaffold_session`** + native `scaffolder` (fixed; no zonemap). Между design lock и execute. При рычаге off — не вызывать; тул отказывает без fabricate done. Lead диспатчит шаги и спавнит scaffolder; модели внутри тула не вызываются:
 ```
 scaffold_session(step="begin"|"check"|"done", task="<scaffold-task-file>")
 ```
@@ -57,7 +59,7 @@ Two-stage gate = **запуск линтера**, не свободное суж
 - two-stage gate — source↔spec, spec↔ADR.
 - produce ≠ decide — lead гейтит и лочит, worker производит.
 - critic свежим контекстом, независимо.
-- token-economy — cheap-дефолт (local Qwen), дорогой рычаг (fan-out/critic/slow) только по классу задачи/blast-radius.
+- token-economy — Composer временный cheap-default; дорогой рычаг (4.7/fan-out/critic/slow) только по классу задачи/blast-radius.
 
 ## Зоны и enforcement
 - Каждый worker пишет в свою зону, isolated worktree. Записи капчатся patch/branch, мёржатся под контролем lead.

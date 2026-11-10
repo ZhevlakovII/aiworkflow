@@ -45,3 +45,15 @@ test("AGENTS.md: scaffold_session is default; no LEGACY scaffold_worker", () => 
   assert.doesNotMatch(md, /LEGACY[\s\S]{0,120}scaffold_worker/, "no LEGACY scaffold_worker paragraph");
   assert.doesNotMatch(md, /scaffold_worker\s*\(/, "no scaffold_worker call-site docs");
 });
+
+
+test("scaffold_session: lever off + resolveContractKey + MISROUTE", () => {
+  const src = readFileSync(SESSION_SRC, "utf-8");
+  assert.match(src, /scaffoldOptInFromTaskText/, "reads scaffold lever");
+  assert.match(src, /lever is off|scaffold lever/, "errs when lever off");
+  assert.match(src, /no done fabricate|no fake|lever is off/);
+  assert.match(src, /resolveContractKey/, "shared contract key");
+  assert.match(src, /MISROUTE/);
+  assert.match(src, /scaffold/);
+});
+

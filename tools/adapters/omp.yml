@@ -37,10 +37,10 @@ content:
   # AD-canon-role-inserts (T-canon-single-source): named text fragments
   # substituted into canon `{{insert:KEY}}` placeholders. OMP is the
   # "no-frills" baseline port — no ambient-ignore line (no ambient-rules
-  # problem, pi-native harness), no discovery-line on the generic executor
-  # (only domain executors get the ast-index reminder), no commit-rail
-  # sentence (OMP has no gated_commit rail concept in the role text), native
-  # `.omp` zone-guard token, isolated-worktree execution model.
+  # problem, pi-native harness), discovery-note insert present for roles that
+  # reference it (explorer; domain packs are consumer overlays, not canon),
+  # no commit-rail sentence (OMP has no gated_commit rail concept in the role
+  # text), native `.omp` zone-guard token, isolated-worktree execution model.
   inserts:
     worktree-note: " (isolated worktree)"
     zone-guard-dir: ".omp"

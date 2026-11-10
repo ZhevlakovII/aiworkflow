@@ -1,0 +1,5 @@
+# zone→tech→executor (project overlay: <proj>/.dsh-aiwf/zonemap.yml).
+# Installer seeds this skeleton if absent; domain paths are project-specific.
+map: []
+default: null
+deny-domain: []

@@ -40,3 +40,12 @@ test("AGENTS.md: design_session is default; no LEGACY design_worker", () => {
   assert.doesNotMatch(md, /LEGACY[\s\S]{0,120}design_worker/, "no LEGACY design_worker paragraph");
   assert.doesNotMatch(md, /design_worker\s*\(/, "no design_worker call-site docs");
 });
+
+
+test("design_session uses resolveContractKey (shared ck12 path)", () => {
+  const src = readFileSync(SESSION_SRC, "utf-8");
+  assert.match(src, /resolveContractKey/, "must resolve contract key with binds/strip");
+  assert.equal(src.includes("contractKey12("), false, "legacy bare contractKey12 call removed");
+  assert.match(src, /MISROUTE/, "keeps stage MISROUTE");
+  assert.ok(src.includes("design"), "stage design check present");
+});

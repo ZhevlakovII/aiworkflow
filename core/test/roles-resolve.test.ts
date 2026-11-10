@@ -1,6 +1,8 @@
 import { test } from "node:test";
+import { readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
-import * as path from "node:path";
 
 import {
   resolveRolePrompt,
@@ -150,4 +152,24 @@ test("installRootFromToolUrl: <installRoot>/tools/<name>.ts -> installRoot (Bun/
   const url = "file:///C:/repo/.omp/tools/execute_worker.ts";
   const root = installRootFromToolUrl(url).replace(/\\/g, "/");
   assert.match(root, /\/repo\/\.omp$/);
+});
+// ---------------------------------------------------------------------------
+// domain-collapse phase 1 — executor project-rules + canon catalog
+// ---------------------------------------------------------------------------
+
+test("executor prose: project rules beat idioms when present", () => {
+  const root = fileURLToPath(new URL("../..", import.meta.url));
+  const prose = readFileSync(path.join(root, "canon/roles/executor.md"), "utf8");
+  assert.match(prose, /правила проекта/i);
+  assert.match(prose, /важнее общих идиом/i);
+  assert.doesNotMatch(prose, /kmp-developer|golang idioms|SwiftUI/i);
+});
+
+test("canon roles catalog: five base roles only, no starred-developer", () => {
+  const root = fileURLToPath(new URL("../..", import.meta.url));
+  const dir = path.join(root, "canon/roles");
+  const files = readdirSync(dir).filter((f) => f.endsWith(".md") && f !== "README.md");
+  const ids = files.map((f) => f.replace(/.md$/, "")).sort();
+  assert.deepEqual(ids, ["critic", "executor", "explorer", "producer", "scaffolder"]);
+  for (const f of files) assert.doesNotMatch(f, /-developer\.md$/);
 });

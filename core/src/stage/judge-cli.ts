@@ -18,9 +18,12 @@
  * On every command entry (after resolve task): if design journal has open
  * needs-human, try grant apply once from policy.stage.grants[ck12].
  *
- * Transitions (fail-closed):
- *   scaffold-begin requires design-lock in the design journal (same ck12).
- *   execute-begin requires scaffold-done with outcome ok in the scaffold journal.
+ * Transitions (fail-closed) — AD-begin-precondition-table + AD-session-stage-identity:
+ *   Stage command refuses wrong task stage (parity with session MISROUTE).
+ *   scaffold-begin: lever off → refuse, no journal; lever on → design-lock required.
+ *   execute-begin: scaffold-done ok only if scaffold lever on; design-lock required
+ *   unless class is trivial and scaffold lever is off; never fake scaffold-done.
+ *   contract-key via strip id/supersedes/stage + binds (see journal.ts).
  *
  * Pure-core + thin-shell split (same pattern as `../design/design-stage-cli.ts`).
  */
@@ -29,7 +32,11 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { criticSeverity } from "../design/design-stage.ts";
-import { criticOptInFromTaskText } from "../design/critic-opt-in.ts";
+import {
+  criticOptInFromTaskText,
+  scaffoldOptInFromTaskText,
+} from "../design/critic-opt-in.ts";
+import { scalarField } from "../design/task-zone.ts";
 import { gateLint } from "../design/gate-lint.ts";
 import type { ResolvedPolicy } from "../policy/policy.ts";
 import { ACTIVE_ZONE_REL, parseActiveZone } from "../rails/active-zone.ts";
@@ -39,8 +46,8 @@ import { isNeedsHumanReason, tryApplyGrant } from "./grants.ts";
 import {
   appendEvent,
   artifactHash,
-  contractKey12,
   readJournal,
+  resolveContractKey,
   type StageJournalEvent,
 } from "./journal.ts";
 
@@ -123,8 +130,39 @@ function resolveTask(
     return { error: usageError(`task file not found: ${taskPath}`) };
   }
   const taskText = deps.readFile(taskPath);
-  const ck12 = contractKey12(taskText);
-  return { taskPath, taskText, ck12 };
+  const key = resolveContractKey(taskText, {
+    repoRoot: deps.cwd,
+    taskPath,
+    exists: deps.exists,
+    readFile: deps.readFile,
+  });
+  if (!key.ok) {
+    return { error: blocked(key.error) };
+  }
+  return { taskPath, taskText, ck12: key.ck12 };
+}
+
+function taskStageOf(taskText: string): string {
+  return (scalarField(taskText, "stage") || "").trim().toLowerCase();
+}
+
+function taskClassOf(taskText: string): string {
+  return (scalarField(taskText, "class") || "").trim().toLowerCase();
+}
+
+/** Refuse when task stage label does not match the command family (session MISROUTE parity). */
+function requireTaskStage(
+  taskText: string,
+  command: string,
+  prefix: string,
+): JudgeCliOutput | null {
+  const stage = taskStageOf(taskText);
+  if (!stage.startsWith(prefix)) {
+    return blocked(
+      `MISROUTE: ${command} requires stage:${prefix}* (got stage=${stage || "<none>"})`,
+    );
+  }
+  return null;
 }
 
 function append(
@@ -167,6 +205,8 @@ function runDesignBegin(deps: JudgeCliDeps, taskArg: string): JudgeCliOutput {
   const resolved = resolveTask(deps, taskArg);
   if ("error" in resolved) return resolved.error;
   const { taskPath, taskText, ck12 } = resolved;
+  const stageErr = requireTaskStage(taskText, "design-begin", "design");
+  if (stageErr) return stageErr;
   const criticOptIn = criticOptInFromTaskText(taskText);
   append(deps, ck12, DESIGN_STAGE, {
     type: "design-begin",
@@ -188,7 +228,9 @@ function runDesignGateRecord(
   }
   const resolved = resolveTask(deps, taskArg);
   if ("error" in resolved) return resolved.error;
-  const { ck12 } = resolved;
+  const { taskText, ck12 } = resolved;
+  const stageErr = requireTaskStage(taskText, "design-gate-record", "design");
+  if (stageErr) return stageErr;
   append(deps, ck12, DESIGN_STAGE, { type: "design-gate", verdict: v });
   return ok(`design-gate-record ok verdict=${v} ck12=${ck12}`);
 }
@@ -200,7 +242,9 @@ function runDesignCriticRecord(
 ): JudgeCliOutput {
   const resolved = resolveTask(deps, taskArg);
   if ("error" in resolved) return resolved.error;
-  const { ck12 } = resolved;
+  const { taskText, ck12 } = resolved;
+  const stageErr = requireTaskStage(taskText, "design-critic-record", "design");
+  if (stageErr) return stageErr;
   const findingsPath = path.resolve(deps.cwd, findingsArg);
   if (!deps.exists(findingsPath)) {
     return usageError(`findings file not found: ${findingsPath}`);
@@ -229,7 +273,9 @@ function runDesignNeedsHuman(
   }
   const resolved = resolveTask(deps, taskArg);
   if ("error" in resolved) return resolved.error;
-  const { ck12 } = resolved;
+  const { taskText, ck12 } = resolved;
+  const stageErr = requireTaskStage(taskText, "design-needs-human", "design");
+  if (stageErr) return stageErr;
   append(deps, ck12, DESIGN_STAGE, { type: "needs-human", reason });
   return ok(`design-needs-human ok reason=${reason} ck12=${ck12}`);
 }
@@ -254,6 +300,8 @@ function runDesignLock(deps: JudgeCliDeps, taskArg: string): JudgeCliOutput {
   const resolved = resolveTask(deps, taskArg);
   if ("error" in resolved) return resolved.error;
   const { taskPath, taskText, ck12 } = resolved;
+  const stageErr = requireTaskStage(taskText, "design-lock", "design");
+  if (stageErr) return stageErr;
   const events = readJournal(deps.cwd, ck12, DESIGN_STAGE);
 
   if (!hasGatePass(events)) {
@@ -346,9 +394,17 @@ function checkJudgeZoneExclusive(
 function runScaffoldBegin(deps: JudgeCliDeps, taskArg: string): JudgeCliOutput {
   const resolved = resolveTask(deps, taskArg);
   if ("error" in resolved) return resolved.error;
+  const { taskPath, taskText, ck12 } = resolved;
+  const stageErr = requireTaskStage(taskText, "scaffold-begin", "scaffold");
+  if (stageErr) return stageErr;
+  // Lever off → refuse and write nothing (no fake journal).
+  if (!scaffoldOptInFromTaskText(taskText)) {
+    return blocked(
+      "scaffold-begin blocked: scaffold lever is off (set scaffold: on|true|1|yes on session task)",
+    );
+  }
   const zoneBlock = checkJudgeZoneExclusive(deps, "scaffold-begin");
   if (zoneBlock) return zoneBlock;
-  const { taskPath, ck12 } = resolved;
   if (!hasDesignLock(deps, ck12)) {
     return blocked(`scaffold-begin blocked: no design-lock in design journal (ck12=${ck12})`);
   }
@@ -371,7 +427,9 @@ function runScaffoldDone(
   }
   const resolved = resolveTask(deps, taskArg);
   if ("error" in resolved) return resolved.error;
-  const { ck12 } = resolved;
+  const { taskText, ck12 } = resolved;
+  const stageErr = requireTaskStage(taskText, "scaffold-done", "scaffold");
+  if (stageErr) return stageErr;
   const events = readJournal(deps.cwd, ck12, SCAFFOLD_STAGE);
   if (!events.some((e) => e.type === SCAFFOLD_STARTED)) {
     return blocked(`scaffold-done blocked: no scaffold-started in journal (ck12=${ck12})`);
@@ -383,14 +441,28 @@ function runScaffoldDone(
 function runExecuteBegin(deps: JudgeCliDeps, taskArg: string): JudgeCliOutput {
   const resolved = resolveTask(deps, taskArg);
   if ("error" in resolved) return resolved.error;
+  const { taskPath, taskText, ck12 } = resolved;
+  const stageErr = requireTaskStage(taskText, "execute-begin", "execute");
+  if (stageErr) return stageErr;
   const zoneBlock = checkJudgeZoneExclusive(deps, "execute-begin");
   if (zoneBlock) return zoneBlock;
-  const { taskPath, ck12 } = resolved;
-  if (!hasScaffoldDoneOk(deps, ck12)) {
+
+  const scaffoldOn = scaffoldOptInFromTaskText(taskText);
+  const cls = taskClassOf(taskText);
+  const trivial = cls === "trivial";
+  // Design-lock required unless class trivial AND scaffold lever off.
+  // Scaffold on never skips design-lock (even for trivial).
+  const needDesignLock = scaffoldOn || !trivial;
+  if (needDesignLock && !hasDesignLock(deps, ck12)) {
+    return blocked(`execute-begin blocked: no design-lock in design journal (ck12=${ck12})`);
+  }
+  // Scaffold-done only when lever on; never fabricate when off.
+  if (scaffoldOn && !hasScaffoldDoneOk(deps, ck12)) {
     return blocked(
       `execute-begin blocked: no scaffold-done outcome=ok in scaffold journal (ck12=${ck12})`,
     );
   }
+
   append(deps, ck12, EXECUTE_STAGE, {
     type: EXEC_STARTED,
     task: path.relative(deps.cwd, taskPath).split(path.sep).join("/"),
@@ -410,7 +482,9 @@ function runExecuteDone(
   }
   const resolved = resolveTask(deps, taskArg);
   if ("error" in resolved) return resolved.error;
-  const { ck12 } = resolved;
+  const { taskText, ck12 } = resolved;
+  const stageErr = requireTaskStage(taskText, "execute-done", "execute");
+  if (stageErr) return stageErr;
   const events = readJournal(deps.cwd, ck12, EXECUTE_STAGE);
   if (!events.some((e) => e.type === EXEC_STARTED)) {
     return blocked(`execute-done blocked: no exec-started in journal (ck12=${ck12})`);

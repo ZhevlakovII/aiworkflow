@@ -6,7 +6,7 @@ import nodePath from "node:path";
 
 import { resolvePolicy, type ResolvedPolicy } from "../src/policy/policy.ts";
 import { runJudgeCli, type JudgeCliDeps } from "../src/stage/judge-cli.ts";
-import { appendEvent, artifactHash, contractKey12, readJournal } from "../src/stage/journal.ts";
+import { appendEvent, artifactHash, contractKey12, readJournal, resolveContractKey } from "../src/stage/journal.ts";
 
 function makeTmp(): string {
   return mkdtempSync(nodePath.join(tmpdir(), "aiwf-judge-cli-"));
@@ -20,6 +20,19 @@ function depsFor(dir: string): JudgeCliDeps {
     now: () => "2026-09-24T12:00:00.000Z",
   };
 }
+
+function ck12Of(dir: string, taskPath: string): string {
+  const text = readFileSync(taskPath, "utf-8");
+  const r = resolveContractKey(text, {
+    repoRoot: dir,
+    taskPath,
+    exists: existsSync,
+    readFile: (p) => readFileSync(p, "utf-8"),
+  });
+  assert.equal(r.ok, true, r.ok ? "" : r.error);
+  return r.ok ? r.ck12 : "";
+}
+
 
 /** Task body line "# Judge test" — source line depends on frontmatter length. */
 function writeTask(dir: string, name = "task.md", extraFm: string[] = []): string {
@@ -342,11 +355,15 @@ test("missing --task / unknown command → exit 2", () => {
   }
 });
 
-function writeExecuteTask(dir: string, name = "task.md"): string {
+function writeExecuteTask(
+  dir: string,
+  name = "exec.md",
+  extraFm: string[] = [],
+): string {
   const p = nodePath.join(dir, name);
   writeFileSync(
     p,
-    ["---", "id: etest", "stage: execute", "class: feature", "---", "", "# Exec judge test", ""].join(
+    ["---", "id: etest", "stage: execute", "class: feature", ...extraFm, "---", "", "# Exec judge test", ""].join(
       "\n",
     ),
     "utf-8",
@@ -354,10 +371,48 @@ function writeExecuteTask(dir: string, name = "task.md"): string {
   return p;
 }
 
-/** Seed design-lock + scaffold-done ok for the task's ck12 (execute preconditions). */
-function seedLockAndScaffoldOk(dir: string, taskPath: string, ts = "2026-09-24T12:00:00.000Z"): string {
-  const ck12 = contractKey12(readFileSync(taskPath, "utf-8"));
+function writeScaffoldTask(
+  dir: string,
+  name = "scaffold.md",
+  extraFm: string[] = [],
+): string {
+  const p = nodePath.join(dir, name);
+  writeFileSync(
+    p,
+    [
+      "---",
+      "id: stest",
+      "stage: scaffold",
+      "class: feature",
+      "scaffold: on",
+      ...extraFm,
+      "---",
+      "",
+      "# Scaffold judge test",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  return p;
+}
+
+/** Seed design-lock (+ optional scaffold-done ok) for the task's resolved ck12. */
+function seedDesignLock(
+  dir: string,
+  taskPath: string,
+  ts = "2026-09-24T12:00:00.000Z",
+): string {
+  const ck12 = ck12Of(dir, taskPath);
   appendEvent(dir, ck12, "design", { type: "design-lock", ts });
+  return ck12;
+}
+
+function seedLockAndScaffoldOk(
+  dir: string,
+  taskPath: string,
+  ts = "2026-09-24T12:00:00.000Z",
+): string {
+  const ck12 = seedDesignLock(dir, taskPath, ts);
   appendEvent(dir, ck12, "scaffold", {
     type: "scaffold-started",
     task: nodePath.basename(taskPath),
@@ -394,12 +449,46 @@ test("judge --help lists scaffold + execute commands", () => {
   }
 });
 
+test("scaffold-begin wrong stage MISROUTE", () => {
+  const dir = makeTmp();
+  try {
+    writeTask(dir);
+    const begin = runJudgeCli(["scaffold-begin", "--task", "task.md"], depsFor(dir));
+    assert.equal(begin.exitCode, 1);
+    assert.match(begin.stderr, /MISROUTE/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("scaffold-begin lever off refuses and writes nothing", () => {
+  const dir = makeTmp();
+  try {
+    writeTask(dir);
+    lockViaJudge(dir);
+    const sc = nodePath.join(dir, "scaffold.md");
+    writeFileSync(
+      sc,
+      ["---", "id: s", "stage: scaffold", "class: feature", "binds: task.md", "---", "", "# S", ""].join("\n"),
+      "utf-8",
+    );
+    const begin = runJudgeCli(["scaffold-begin", "--task", "scaffold.md"], depsFor(dir));
+    assert.equal(begin.exitCode, 1);
+    assert.match(begin.stderr, /scaffold lever is off/);
+    const ck = ck12Of(dir, sc);
+    assert.deepEqual(readJournal(dir, ck, "scaffold"), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("scaffold-begin without design-lock is blocked (exit 1)", () => {
   const dir = makeTmp();
   try {
     writeTask(dir);
+    writeScaffoldTask(dir, "scaffold.md", ["binds: task.md"]);
     const deps = depsFor(dir);
-    const begin = runJudgeCli(["scaffold-begin", "--task", "task.md"], deps);
+    const begin = runJudgeCli(["scaffold-begin", "--task", "scaffold.md"], deps);
     assert.equal(begin.exitCode, 1);
     assert.match(begin.stderr, /no design-lock/);
   } finally {
@@ -407,12 +496,56 @@ test("scaffold-begin without design-lock is blocked (exit 1)", () => {
   }
 });
 
-test("execute-begin without scaffold-done ok is blocked (exit 1)", () => {
+test("execute-begin wrong stage MISROUTE", () => {
+  const dir = makeTmp();
+  try {
+    writeTask(dir);
+    const begin = runJudgeCli(["execute-begin", "--task", "task.md"], depsFor(dir));
+    assert.equal(begin.exitCode, 1);
+    assert.match(begin.stderr, /MISROUTE/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("execute-begin scaffold off without design-lock is blocked", () => {
   const dir = makeTmp();
   try {
     writeExecuteTask(dir);
     const deps = depsFor(dir);
-    const begin = runJudgeCli(["execute-begin", "--task", "task.md"], deps);
+    const begin = runJudgeCli(["execute-begin", "--task", "exec.md"], deps);
+    assert.equal(begin.exitCode, 1);
+    assert.match(begin.stderr, /no design-lock/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("execute-begin scaffold off with design-lock does not require scaffold-done", () => {
+  const dir = makeTmp();
+  try {
+    writeTask(dir);
+    lockViaJudge(dir);
+    writeExecuteTask(dir, "exec.md", ["binds: task.md"]);
+    const deps = depsFor(dir);
+    const begin = runJudgeCli(["execute-begin", "--task", "exec.md"], deps);
+    assert.equal(begin.exitCode, 0, begin.stderr);
+    const ck = ck12Of(dir, nodePath.join(dir, "exec.md"));
+    assert.equal(readJournal(dir, ck, "execute")[0]!.type, "exec-started");
+    // no fabricated scaffold journal
+    assert.deepEqual(readJournal(dir, ck, "scaffold"), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("execute-begin scaffold on without scaffold-done ok is blocked", () => {
+  const dir = makeTmp();
+  try {
+    writeTask(dir);
+    lockViaJudge(dir);
+    writeExecuteTask(dir, "exec.md", ["binds: task.md", "scaffold: on"]);
+    const begin = runJudgeCli(["execute-begin", "--task", "exec.md"], depsFor(dir));
     assert.equal(begin.exitCode, 1);
     assert.match(begin.stderr, /no scaffold-done outcome=ok/);
   } finally {
@@ -423,9 +556,10 @@ test("execute-begin without scaffold-done ok is blocked (exit 1)", () => {
 test("execute-begin blocked when scaffold-done outcome=violation", () => {
   const dir = makeTmp();
   try {
-    const task = writeExecuteTask(dir);
-    const ck12 = contractKey12(readFileSync(task, "utf-8"));
-    appendEvent(dir, ck12, "design", { type: "design-lock", ts: "2026-09-24T12:00:00.000Z" });
+    writeTask(dir);
+    lockViaJudge(dir);
+    const task = writeExecuteTask(dir, "exec.md", ["binds: task.md", "scaffold: on"]);
+    const ck12 = ck12Of(dir, task);
     appendEvent(dir, ck12, "scaffold", {
       type: "scaffold-started",
       ts: "2026-09-24T12:00:00.000Z",
@@ -435,7 +569,7 @@ test("execute-begin blocked when scaffold-done outcome=violation", () => {
       outcome: "violation",
       ts: "2026-09-24T12:00:00.000Z",
     });
-    const begin = runJudgeCli(["execute-begin", "--task", "task.md"], depsFor(dir));
+    const begin = runJudgeCli(["execute-begin", "--task", "exec.md"], depsFor(dir));
     assert.equal(begin.exitCode, 1);
     assert.match(begin.stderr, /no scaffold-done outcome=ok/);
   } finally {
@@ -443,30 +577,32 @@ test("execute-begin blocked when scaffold-done outcome=violation", () => {
   }
 });
 
-test("happy path: design-lock → scaffold → execute", () => {
+test("happy path: design-lock → scaffold → execute (shared binds key)", () => {
   const dir = makeTmp();
   try {
-    const task = writeTask(dir);
+    writeTask(dir);
     lockViaJudge(dir);
+    writeScaffoldTask(dir, "scaffold.md", ["binds: task.md"]);
+    writeExecuteTask(dir, "exec.md", ["binds: task.md", "scaffold: on"]);
     const deps = depsFor(dir);
-    const relTask = "task.md";
 
-    const sBegin = runJudgeCli(["scaffold-begin", "--task", relTask], deps);
+    const sBegin = runJudgeCli(["scaffold-begin", "--task", "scaffold.md"], deps);
     assert.equal(sBegin.exitCode, 0, sBegin.stderr);
     assert.match(sBegin.stdout, /scaffold-begin ok/);
 
-    const sDone = runJudgeCli(["scaffold-done", "--task", relTask, "--outcome", "ok"], deps);
+    const sDone = runJudgeCli(["scaffold-done", "--task", "scaffold.md", "--outcome", "ok"], deps);
     assert.equal(sDone.exitCode, 0, sDone.stderr);
     assert.match(sDone.stdout, /scaffold-done ok outcome=ok/);
 
-    const eBegin = runJudgeCli(["execute-begin", "--task", relTask], deps);
+    const eBegin = runJudgeCli(["execute-begin", "--task", "exec.md"], deps);
     assert.equal(eBegin.exitCode, 0, eBegin.stderr);
     assert.match(eBegin.stdout, /execute-begin ok/);
 
-    const eDone = runJudgeCli(["execute-done", "--task", relTask, "--outcome", "ok"], deps);
+    const eDone = runJudgeCli(["execute-done", "--task", "exec.md", "--outcome", "ok"], deps);
     assert.equal(eDone.exitCode, 0, eDone.stderr);
 
-    const ck12 = contractKey12(deps.readFile(task));
+    const ck12 = ck12Of(dir, nodePath.join(dir, "exec.md"));
+    assert.equal(ck12, ck12Of(dir, nodePath.join(dir, "task.md")));
     assert.deepEqual(
       readJournal(dir, ck12, "scaffold").map((e) => e.type),
       ["scaffold-started", "scaffold-done"],
@@ -486,8 +622,9 @@ test("scaffold-done without scaffold-started is blocked (exit 1)", () => {
   try {
     writeTask(dir);
     lockViaJudge(dir);
+    writeScaffoldTask(dir, "scaffold.md", ["binds: task.md"]);
     const deps = depsFor(dir);
-    const done = runJudgeCli(["scaffold-done", "--task", "task.md", "--outcome", "ok"], deps);
+    const done = runJudgeCli(["scaffold-done", "--task", "scaffold.md", "--outcome", "ok"], deps);
     assert.equal(done.exitCode, 1);
     assert.match(done.stderr, /no scaffold-started/);
   } finally {
@@ -498,18 +635,20 @@ test("scaffold-done without scaffold-started is blocked (exit 1)", () => {
 test("execute-begin appends exec-started on execute journal (not design)", () => {
   const dir = makeTmp();
   try {
-    const task = writeExecuteTask(dir);
+    writeTask(dir);
+    lockViaJudge(dir);
+    const task = writeExecuteTask(dir, "exec.md", ["binds: task.md", "scaffold: on"]);
     seedLockAndScaffoldOk(dir, task);
     const deps = depsFor(dir);
-    const begin = runJudgeCli(["execute-begin", "--task", "task.md"], deps);
+    const begin = runJudgeCli(["execute-begin", "--task", "exec.md"], deps);
     assert.equal(begin.exitCode, 0, begin.stderr);
     assert.match(begin.stdout, /execute-begin ok/);
 
-    const ck12 = contractKey12(deps.readFile(task));
+    const ck12 = ck12Of(dir, task);
     const execEvents = readJournal(dir, ck12, "execute");
     assert.equal(execEvents.length, 1);
     assert.equal(execEvents[0]!.type, "exec-started");
-    assert.equal(execEvents[0]!.task, "task.md");
+    assert.equal(execEvents[0]!.task, "exec.md");
     assert.equal(execEvents[0]!.contract_key, ck12);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -521,7 +660,7 @@ test("execute-done without exec-started is blocked (exit 1)", () => {
   try {
     writeExecuteTask(dir);
     const deps = depsFor(dir);
-    const done = runJudgeCli(["execute-done", "--task", "task.md", "--outcome", "ok"], deps);
+    const done = runJudgeCli(["execute-done", "--task", "exec.md", "--outcome", "ok"], deps);
     assert.equal(done.exitCode, 1);
     assert.match(done.stderr, /no exec-started/);
   } finally {
@@ -532,21 +671,20 @@ test("execute-done without exec-started is blocked (exit 1)", () => {
 test("execute-begin → execute-done ok records exec-done", () => {
   const dir = makeTmp();
   try {
-    const task = writeExecuteTask(dir);
-    seedLockAndScaffoldOk(dir, task);
+    writeTask(dir);
+    lockViaJudge(dir);
+    const task = writeExecuteTask(dir, "exec.md", ["binds: task.md"]);
+    seedDesignLock(dir, task);
     const deps = depsFor(dir);
-    assert.equal(runJudgeCli(["execute-begin", "--task", "task.md"], deps).exitCode, 0);
-    const done = runJudgeCli(["execute-done", "--task", "task.md", "--outcome", "ok"], deps);
+    assert.equal(runJudgeCli(["execute-begin", "--task", "exec.md"], deps).exitCode, 0);
+    const done = runJudgeCli(["execute-done", "--task", "exec.md", "--outcome", "ok"], deps);
     assert.equal(done.exitCode, 0, done.stderr);
-    assert.match(done.stdout, /execute-done ok outcome=ok/);
-
-    const ck12 = contractKey12(deps.readFile(task));
+    const ck12 = ck12Of(dir, task);
     const events = readJournal(dir, ck12, "execute");
     assert.deepEqual(
       events.map((e) => e.type),
       ["exec-started", "exec-done"],
     );
-    assert.equal(events[1]!.outcome, "ok");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -555,14 +693,16 @@ test("execute-begin → execute-done ok records exec-done", () => {
 test("execute-done outcome=violation is recorded", () => {
   const dir = makeTmp();
   try {
-    const task = writeExecuteTask(dir);
-    seedLockAndScaffoldOk(dir, task);
+    writeTask(dir);
+    lockViaJudge(dir);
+    const task = writeExecuteTask(dir, "exec.md", ["binds: task.md"]);
+    seedDesignLock(dir, task);
     const deps = depsFor(dir);
-    assert.equal(runJudgeCli(["execute-begin", "--task", "task.md"], deps).exitCode, 0);
-    const done = runJudgeCli(["execute-done", "--task", "task.md", "--outcome", "violation"], deps);
+    assert.equal(runJudgeCli(["execute-begin", "--task", "exec.md"], deps).exitCode, 0);
+    const done = runJudgeCli(["execute-done", "--task", "exec.md", "--outcome", "violation"], deps);
     assert.equal(done.exitCode, 0, done.stderr);
     assert.match(done.stdout, /outcome=violation/);
-    const ck12 = contractKey12(deps.readFile(task));
+    const ck12 = ck12Of(dir, task);
     const events = readJournal(dir, ck12, "execute");
     assert.equal(events[1]!.type, "exec-done");
     assert.equal(events[1]!.outcome, "violation");
@@ -574,15 +714,135 @@ test("execute-done outcome=violation is recorded", () => {
 test("execute-done missing / invalid --outcome → exit 2", () => {
   const dir = makeTmp();
   try {
-    const task = writeExecuteTask(dir);
-    seedLockAndScaffoldOk(dir, task);
+    writeExecuteTask(dir);
     const deps = depsFor(dir);
-    assert.equal(runJudgeCli(["execute-begin", "--task", "task.md"], deps).exitCode, 0);
-    assert.equal(runJudgeCli(["execute-done", "--task", "task.md"], deps).exitCode, 2);
+    assert.equal(runJudgeCli(["execute-done", "--task", "exec.md"], deps).exitCode, 2);
     assert.equal(
-      runJudgeCli(["execute-done", "--task", "task.md", "--outcome", "nope"], deps).exitCode,
+      runJudgeCli(["execute-done", "--task", "exec.md", "--outcome", "nope"], deps).exitCode,
       2,
     );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("execute-begin class trivial scaffold off skips design-lock", () => {
+  const dir = makeTmp();
+  try {
+    const p = nodePath.join(dir, "exec.md");
+    writeFileSync(
+      p,
+      ["---", "id: t", "stage: execute", "class: trivial", "---", "", "# T", ""].join("\n"),
+      "utf-8",
+    );
+    const begin = runJudgeCli(["execute-begin", "--task", "exec.md"], depsFor(dir));
+    assert.equal(begin.exitCode, 0, begin.stderr);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("execute-begin class trivial scaffold on still requires design-lock", () => {
+  const dir = makeTmp();
+  try {
+    const p = nodePath.join(dir, "exec.md");
+    writeFileSync(
+      p,
+      ["---", "id: t", "stage: execute", "class: trivial", "scaffold: on", "---", "", "# T", ""].join("\n"),
+      "utf-8",
+    );
+    const begin = runJudgeCli(["execute-begin", "--task", "exec.md"], depsFor(dir));
+    assert.equal(begin.exitCode, 1);
+    assert.match(begin.stderr, /no design-lock/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Contract B — by:judge mutual exclusion on scaffold/execute begin
+// ---------------------------------------------------------------------------
+
+function writeActiveZone(
+  dir: string,
+  body: { task: string; allow: string[]; deny?: string[]; by?: string },
+): void {
+  mkdirSync(nodePath.join(dir, ".workflow"), { recursive: true });
+  writeFileSync(
+    nodePath.join(dir, ".workflow", "active-zone.json"),
+    JSON.stringify(body),
+    "utf-8",
+  );
+}
+
+test("scaffold-begin blocked on legacy lead zone (by absent)", () => {
+  const dir = makeTmp();
+  try {
+    writeTask(dir);
+    lockViaJudge(dir);
+    writeScaffoldTask(dir, "scaffold.md", ["binds: task.md"]);
+    writeActiveZone(dir, { task: "jtest", allow: ["core/**"] });
+    const begin = runJudgeCli(["scaffold-begin", "--task", "scaffold.md"], depsFor(dir));
+    assert.equal(begin.exitCode, 1);
+    assert.match(begin.stderr, /legacy lead zone|by≠judge|by!=judge/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("scaffold-begin allowed on by:judge zone", () => {
+  const dir = makeTmp();
+  try {
+    writeTask(dir);
+    lockViaJudge(dir);
+    writeScaffoldTask(dir, "scaffold.md", ["binds: task.md"]);
+    writeActiveZone(dir, { task: "jtest", allow: ["core/**"], by: "judge" });
+    const begin = runJudgeCli(["scaffold-begin", "--task", "scaffold.md"], depsFor(dir));
+    assert.equal(begin.exitCode, 0, begin.stderr);
+    assert.match(begin.stdout, /scaffold-begin ok/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("scaffold-begin allowed when active-zone absent", () => {
+  const dir = makeTmp();
+  try {
+    writeTask(dir);
+    lockViaJudge(dir);
+    writeScaffoldTask(dir, "scaffold.md", ["binds: task.md"]);
+    const begin = runJudgeCli(["scaffold-begin", "--task", "scaffold.md"], depsFor(dir));
+    assert.equal(begin.exitCode, 0, begin.stderr);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("execute-begin blocked on legacy lead zone", () => {
+  const dir = makeTmp();
+  try {
+    writeTask(dir);
+    lockViaJudge(dir);
+    writeExecuteTask(dir, "exec.md", ["binds: task.md"]);
+    writeActiveZone(dir, { task: "jtest", allow: ["core/**"], by: "lead" });
+    const begin = runJudgeCli(["execute-begin", "--task", "exec.md"], depsFor(dir));
+    assert.equal(begin.exitCode, 1);
+    assert.match(begin.stderr, /legacy lead zone|by≠judge|by!=judge/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("execute-begin allowed on by:judge zone", () => {
+  const dir = makeTmp();
+  try {
+    writeTask(dir);
+    lockViaJudge(dir);
+    writeExecuteTask(dir, "exec.md", ["binds: task.md"]);
+    writeActiveZone(dir, { task: "jtest", allow: ["core/**"], by: "judge" });
+    const begin = runJudgeCli(["execute-begin", "--task", "exec.md"], depsFor(dir));
+    assert.equal(begin.exitCode, 0, begin.stderr);
+    assert.match(begin.stdout, /execute-begin ok/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -720,102 +980,6 @@ test("judge --help lists design-needs-human", () => {
   try {
     const help = runJudgeCli(["--help"], depsFor(dir));
     assert.match(help.stdout, /design-needs-human/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-// ---------------------------------------------------------------------------
-// Contract B — by:judge mutual exclusion on scaffold/execute begin
-// ---------------------------------------------------------------------------
-
-function writeActiveZone(
-  dir: string,
-  body: { task: string; allow: string[]; deny?: string[]; by?: string },
-): void {
-  mkdirSync(nodePath.join(dir, ".workflow"), { recursive: true });
-  writeFileSync(
-    nodePath.join(dir, ".workflow", "active-zone.json"),
-    JSON.stringify(body),
-    "utf-8",
-  );
-}
-
-test("scaffold-begin blocked on legacy lead zone (by absent)", () => {
-  const dir = makeTmp();
-  try {
-    writeTask(dir);
-    lockViaJudge(dir);
-    writeActiveZone(dir, { task: "jtest", allow: ["core/**"] });
-    const begin = runJudgeCli(["scaffold-begin", "--task", "task.md"], depsFor(dir));
-    assert.equal(begin.exitCode, 1);
-    assert.match(begin.stderr, /legacy lead zone|by≠judge|by!=judge/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("scaffold-begin allowed on by:judge zone", () => {
-  const dir = makeTmp();
-  try {
-    writeTask(dir);
-    lockViaJudge(dir);
-    writeActiveZone(dir, { task: "jtest", allow: ["core/**"], by: "judge" });
-    const begin = runJudgeCli(["scaffold-begin", "--task", "task.md"], depsFor(dir));
-    assert.equal(begin.exitCode, 0, begin.stderr);
-    assert.match(begin.stdout, /scaffold-begin ok/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("scaffold-begin allowed when active-zone absent", () => {
-  const dir = makeTmp();
-  try {
-    writeTask(dir);
-    lockViaJudge(dir);
-    const begin = runJudgeCli(["scaffold-begin", "--task", "task.md"], depsFor(dir));
-    assert.equal(begin.exitCode, 0, begin.stderr);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("execute-begin blocked on legacy lead zone", () => {
-  const dir = makeTmp();
-  try {
-    writeTask(dir);
-    lockViaJudge(dir);
-    const deps = depsFor(dir);
-    assert.equal(runJudgeCli(["scaffold-begin", "--task", "task.md"], deps).exitCode, 0);
-    assert.equal(
-      runJudgeCli(["scaffold-done", "--task", "task.md", "--outcome", "ok"], deps).exitCode,
-      0,
-    );
-    writeActiveZone(dir, { task: "jtest", allow: ["core/**"], by: "lead" });
-    const begin = runJudgeCli(["execute-begin", "--task", "task.md"], deps);
-    assert.equal(begin.exitCode, 1);
-    assert.match(begin.stderr, /legacy lead zone|by≠judge|by!=judge/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("execute-begin allowed on by:judge zone", () => {
-  const dir = makeTmp();
-  try {
-    writeTask(dir);
-    lockViaJudge(dir);
-    const deps = depsFor(dir);
-    assert.equal(runJudgeCli(["scaffold-begin", "--task", "task.md"], deps).exitCode, 0);
-    assert.equal(
-      runJudgeCli(["scaffold-done", "--task", "task.md", "--outcome", "ok"], deps).exitCode,
-      0,
-    );
-    writeActiveZone(dir, { task: "jtest", allow: ["core/**"], by: "judge" });
-    const begin = runJudgeCli(["execute-begin", "--task", "task.md"], deps);
-    assert.equal(begin.exitCode, 0, begin.stderr);
-    assert.match(begin.stdout, /execute-begin ok/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

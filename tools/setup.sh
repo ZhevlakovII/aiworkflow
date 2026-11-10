@@ -48,14 +48,15 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
-case "$FLOW" in omp|claude|opencode|cursor|all|both) ;; *) echo "invalid --flow: $FLOW (omp|claude|opencode|cursor|all|both)" >&2; exit 2 ;; esac
-DO_OMP=0; DO_CLAUDE=0; DO_OPENCODE=0; DO_CURSOR=0
+case "$FLOW" in omp|claude|opencode|cursor|dsh|all|both) ;; *) echo "invalid --flow: $FLOW (omp|claude|opencode|cursor|dsh|all|both)" >&2; exit 2 ;; esac
+DO_OMP=0; DO_CLAUDE=0; DO_OPENCODE=0; DO_CURSOR=0; DO_DSH=0
 case "$FLOW" in
     omp)      DO_OMP=1 ;;
     claude)   DO_CLAUDE=1 ;;
     opencode) DO_OPENCODE=1 ;;
     cursor)   DO_CURSOR=1 ;;
-    all)      DO_OMP=1; DO_CLAUDE=1; DO_OPENCODE=1; DO_CURSOR=1 ;;
+    dsh)      DO_DSH=1 ;;
+    all)      DO_OMP=1; DO_CLAUDE=1; DO_OPENCODE=1; DO_CURSOR=1; DO_DSH=1 ;;
     both)     DO_OMP=1; DO_CLAUDE=1; DO_OPENCODE=1 ;;   # both deliberately excludes cursor
 esac
 
@@ -66,7 +67,7 @@ GLOBAL="$HOME/.omp/agent"
 TEMPLATES="$SCRIPT_DIR/templates"
 
 echo "=== AI Workflow setup ==="
-echo "flow:   $FLOW  (omp=$DO_OMP claude=$DO_CLAUDE opencode=$DO_OPENCODE cursor=$DO_CURSOR)"
+echo "flow:   $FLOW  (omp=$DO_OMP claude=$DO_CLAUDE opencode=$DO_OPENCODE cursor=$DO_CURSOR dsh=$DO_DSH)"
 echo "canon:  $CANON"
 echo "global: $GLOBAL"
 echo ""
@@ -143,6 +144,7 @@ prereqs=(
     "Node.js >=24|node|--version|$DO_OMP|use nvm or distro pkg"
     "Claude CLI|claude|--version|$claude_req|$claude_hint"
     "OpenCode|opencode|--version|$DO_OPENCODE|https://opencode.ai (TUI/Desktop) - REQUIRED for opencode flavor"
+    "DSH (DeepSeek)|dsh|--version|$DO_DSH|DeepSeek Harness (Cordis) - REQUIRED for dsh flavor"
     "git|git|--version|1|apt/brew install git"
     "ast-index|ast-index|version|1|install ast-index CLI (Track A discovery)"
     "Java 21 (opt)|java|-version|0|only for KMP target (gradle test-cmd)"
@@ -245,7 +247,7 @@ else
         else
             cp "$headTpl" "$cfgDst"
         fi
-        echo "  [seed] config.yml modelRoles <- template (Qwen cheap-default)"
+        echo "  [seed] config.yml modelRoles <- template (composer/4.7 matrix)"
     else echo "  [keep] modelRoles present - untouched"; fi
     echo ""
 fi
@@ -309,7 +311,18 @@ if [ "$DO_OPENCODE" = "1" ]; then
     echo ""
 fi
 
-# --- 7. Cursor flavor (agents + skills + hooks.json) ---
+# --- 7. DSH flavor (Cordis plugin + .dsh-aiwf overlay) ---
+if [ "$DO_DSH" = "1" ]; then
+    echo "--- install-dsh.sh ---"
+    dsh_args=""
+    [ "$CHECK" = "1" ] && dsh_args="$dsh_args --check"
+    [ -n "$TARGET" ]   && dsh_args="$dsh_args --target $TARGET"
+    bash "$SCRIPT_DIR/install-dsh.sh" $dsh_args
+    if [ $? -ne 0 ]; then echo "install-dsh.sh failed" >&2; exit $?; fi
+    echo ""
+fi
+
+# --- 8. Cursor flavor (agents + skills + hooks.json) ---
 if [ "$DO_CURSOR" = "1" ]; then
     echo "--- install-cursor.sh ---"
     cu_args=""

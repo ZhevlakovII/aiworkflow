@@ -1,23 +1,25 @@
-# canon/zonemap.yml — тир1 (writable canon), schema-скелет
+# canon/zonemap.yml — example only (NOT seeded to consumers)
 #
-# Тир: 1 — canon/ (writable, только данные). AD-canon-dir-layout,
-# AD-three-tier-partition.
-# Назначение: карта path-glob -> domain-agent (резолв executor'а для
-# /aiwf-execute), с default и deny-domain. Enforcement-adjacent: используется
-# на пути резолва исполнителя, но само по себе — writable данные, не правило
-# защиты (то — core/src/classify/rules.ts, тир2; T7-6: tools/policy/guard-rules.yml
-# удалён в T7, source of truth теперь этот TS-файл).
-# Наполняет: Ф6 (миграция) импортирует реальную карту из .omp/zonemap.yml
-# (compat-путь сохранён как render-target, AD-compat-via-rendered-paths).
+# Live parser shape (`core/src/zone/zonemap.ts` parseZoneMap / resolveAgent):
+#   default:
+#     agent: <name>          # missing/null agent → executor
+#   deny-domain:             # kebab-case key; list of {glob}
+#     - glob: "legacy/**"
+#   map:                     # entries need glob + tech + agent (else dropped)
+#     - glob: "path/glob/**"
+#       tech: stack-id
+#       agent: consumer-agent-name
 #
-# Schema (пример, НЕ активная конфигурация):
+# Installers do NOT seed this file into projects. Absence is normal and
+# resolves to executor on the execute path. Create a filled map only for
+# explicit consumer opt-in routing (overlay agent file + map entry together).
+# Single-stack projects need not author a map.
 #
-# map:
-#   - glob: "path/glob/**"
-#     agent: domain-agent-name
-# default: executor
-# deny_domain: []
+# Scalar `default: null` / empty map / missing file → executor.
+# Diagnostic zonemap CLI may still exit non-zero when a path is forced;
+# execute resolve stays soft (executor + signals, no stage fail).
 
 map: []
-default: null
-deny_domain: []
+default:
+  agent: executor
+deny-domain: []

@@ -17,7 +17,7 @@
 #      --keep-agents freezes any file already present at the dest);
 #   2) copies RULES.md AGENTS.md WATCHDOG.md WATCHDOG.yml (global: Force-sync all;
 #      project: RULES.md seed-if-absent only — never Force-overwrite; others Force);
-#   3) project-scoped ONLY: seeds zonemap.yml/delegation.yml from the canon
+#   3) project-scoped ONLY: seeds delegation.yml from the canon
 #      SKELETON, only if the project doesn't already have one (A3 req 3);
 #   4) splices the PRODUCT block into config.yml (global: `./.omp/` -> `~/.omp/agent/`;
 #      project: paths stay `./.omp/` as-is), PRESERVING any existing head.
@@ -305,12 +305,12 @@ for f in RULES.md AGENTS.md WATCHDOG.md WATCHDOG.yml; do
     fi
 done
 
-# --- 3. Project config seed: zonemap.yml / delegation.yml (project-scoped ONLY, A3 req 3) ---
+# --- 3. Project config seed: delegation.yml only (zonemap NOT seeded) (project-scoped ONLY, A3 req 3) ---
 # Seeded from the canon SKELETON, NEVER from this repo's own filled
 # `.omp/{zonemap,delegation}.yml` (FinManage's product data, not installer payload).
 # An existing project file is NEVER overwritten. Global mode installs neither.
 if [ "$SCOPED" -eq 1 ]; then
-    for cfgName in zonemap delegation; do
+    for cfgName in delegation; do
         src="$CANON_ROLE_ROOT/$cfgName.yml"
         dst="$DEST/$cfgName.yml"
         if [ -f "$dst" ]; then

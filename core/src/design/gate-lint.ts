@@ -21,8 +21,21 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-const BLOCK_RE = /```(spec|adr|fr)\s*\n([\s\S]*?)```/g;
+const BLOCK_RE = /```(spec|sp|adr|ad|fr)\s*\n([\s\S]*?)```/g;
 const SRC_RE = /^([^#]+)#L(\d+)(?:-L?(\d+))?$/;
+
+type BlockKind = "spec" | "adr" | "fr";
+
+function canonicalBlockKind(tag: string): BlockKind {
+  switch (tag) {
+    case "sp":
+      return "spec";
+    case "ad":
+      return "adr";
+    default:
+      return tag as BlockKind;
+  }
+}
 
 export interface GateResult {
   findings: string[];
@@ -64,15 +77,16 @@ function earsCheck(fr: Record<string, string>): string {
 }
 
 /** Extract fenced-blocks of the given kind, parse `key: value` lines. */
-function parseBlocks(mdPath: string, kind: "spec" | "adr" | "fr"): Record<string, string>[] {
+function parseBlocks(mdPath: string, kind: BlockKind): Record<string, string>[] {
   const text = fs.readFileSync(mdPath, "utf8");
   const out: Record<string, string>[] = [];
   for (const m of text.matchAll(BLOCK_RE)) {
-    if (m[1] !== kind) continue;
+    const blockKind = canonicalBlockKind(m[1]);
+    if (blockKind !== kind) continue;
     const entry: Record<string, string> = {};
     for (let line of m[2].split("\n")) {
       // spec/fr source содержит '#Lx' → режем только трейлинг-коммент ' # ...'; adr — весь #-хвост
-      line = kind === "adr" ? line.split("#", 1)[0].replace(/\s+$/, "") : line.replace(/\s+#\s.*$/, "").replace(/\s+$/, "");
+      line = blockKind === "adr" ? line.split("#", 1)[0].replace(/\s+$/, "") : line.replace(/\s+#\s.*$/, "").replace(/\s+$/, "");
       const idx = line.indexOf(":");
       if (idx < 0) continue;
       entry[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
@@ -109,8 +123,8 @@ export function gateLint(taskPath: string, specPath: string, adrPath: string, re
   const ads = parseBlocks(adrPath, "adr");
   const frs = parseBlocks(specPath, "fr");   // FR живёт в spec (problem-space: WHAT система делает)
   const findings: string[] = [];
-  if (!sps.length) findings.push("SPEC: не найдено ни одного ```spec-блока (формат нарушен)");
-  if (!ads.length) findings.push("ADR: не найдено ни одного ```adr-блока (формат нарушен)");
+  if (!sps.length) findings.push("SPEC: не найдено ни одного ```spec|sp-блока (формат нарушен)");
+  if (!ads.length) findings.push("ADR: не найдено ни одного ```adr|ad-блока (формат нарушен)");
 
   // Gate-1: SP ↔ source
   const spIds = new Set<string>();

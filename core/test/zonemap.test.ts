@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
-import { parseZoneMap, resolveAgent, loadZoneMap } from "../src/zone/zonemap.ts";
+import { parseZoneMap, resolveAgent, loadZoneMap, tryLoadZoneMap, emptyZoneMap, resolveExecuteAgent } from "../src/zone/zonemap.ts";
 import { runZonemapCli } from "../src/zone/zonemap-cli.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -190,4 +190,51 @@ test("CLI: --json prints the full ResolveAgentResult, exit code still reflects a
   assert.equal(parsed.agent, "kmp-developer");
   assert.equal(parsed.tech, "kmp");
   assert.equal(parsed.ambiguous, false);
+});
+
+// ---------------------------------------------------------------------------
+// domain-collapse phase 1 — soft execute resolve + deny beats partial match
+// ---------------------------------------------------------------------------
+
+test("parseZoneMap: null default agent -> executor", () => {
+  const zm = parseZoneMap("map: []\ndefault: null\n");
+  assert.equal(zm.defaultAgent, "executor");
+  assert.deepEqual(zm.map, []);
+});
+
+test("parseZoneMap: default.agent missing object -> executor", () => {
+  const zm = parseZoneMap("map: []\ndefault: {}\n");
+  assert.equal(zm.defaultAgent, "executor");
+});
+
+test("resolveAgent: empty map -> defaultAgent executor", () => {
+  const r = resolveAgent(["core/**"], emptyZoneMap());
+  assert.equal(r.agent, "executor");
+  assert.equal(r.ambiguous, false);
+  assert.equal(r.matched.length, 0);
+});
+
+test("resolveAgent: denied beats partial domain match -> executor + denied signal", () => {
+  const zm = loadZoneMap(REAL_ZONEMAP);
+  const r = resolveAgent(["core/money/**", "source/app/**"], zm);
+  assert.equal(r.agent, "executor");
+  assert.deepEqual(r.denied, ["source/app/**"]);
+  assert.equal(r.ambiguous, false);
+});
+
+test("tryLoadZoneMap: missing path -> null, no throw", () => {
+  assert.equal(tryLoadZoneMap(resolve(here, "no-such-zonemap-file.yml")), null);
+});
+
+test("resolveExecuteAgent: missing file -> executor without throw/fail", () => {
+  const r = resolveExecuteAgent(["core/**"], resolve(here, "no-such-zonemap-file.yml"));
+  assert.equal(r.agent, "executor");
+  assert.equal(r.ambiguous, false);
+  assert.equal(r.matched.length, 0);
+  assert.equal(r.denied.length, 0);
+});
+
+test("resolveExecuteAgent: empty map shape -> executor", () => {
+  const r = resolveAgent(["docs/**"], parseZoneMap("map: []\ndefault:\n  agent: executor\ndeny-domain: []\n"));
+  assert.equal(r.agent, "executor");
 });

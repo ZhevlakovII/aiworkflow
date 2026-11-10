@@ -8,6 +8,7 @@ import type { Policy } from "../src/policy/policy.ts";
 import type { HookDeps } from "../src/shim/command-hook.ts";
 import { ompGuardDecision, type OmpEvent } from "../src/shim/omp-adapter.ts";
 import { opencodeGuardDecision, type OcEvent } from "../src/shim/opencode-adapter.ts";
+import { dshGuardDecision, type DshEvent } from "../src/shim/dsh-adapter.ts";
 import * as engine from "../src/render/engine.ts";
 
 const FIXTURE_CANON = nodePath.join(import.meta.dirname, "fixtures", "canon-min");
@@ -106,6 +107,42 @@ test("ompGuardDecision: hasUI=false (headless), no explicit profile -> guarded d
   const event: OmpEvent = { toolName: "Bash", input: { command: "git commit -m x" }, hasUI: false };
   const dec = ompGuardDecision(event, depsWith({}));
   assert.ok(dec && dec.block === true, "headless -> guarded default -> rail maps to deny/block");
+});
+
+// ---------------------------------------------------------------------------
+// dshGuardDecision — normalize + runHook smoke (Cordis tool names)
+// ---------------------------------------------------------------------------
+
+test("dshGuardDecision: shell `rm -rf /` -> {block:true}", () => {
+  const event: DshEvent = { toolName: "shell", input: { command: "rm -rf /" } };
+  const dec = dshGuardDecision(event, depsWith({ profile: "off" }));
+  assert.ok(dec && dec.block === true);
+});
+
+test("dshGuardDecision: raw `git commit` at guarded -> {block:true}", () => {
+  const event: DshEvent = { toolName: "bash", input: { command: "git commit -m x" } };
+  const dec = dshGuardDecision(event, depsWith({ profile: "guarded" }));
+  assert.ok(dec && dec.block === true);
+});
+
+test("dshGuardDecision: file_write SWP normalize", () => {
+  const event: DshEvent = {
+    toolName: "file_write",
+    input: { path: ".workflow/stages/x.json" },
+    cwd: "C:\\repo",
+  };
+  const dec = dshGuardDecision(
+    event,
+    depsWith({ profile: "guarded", session_write_protected: [".workflow/stages/**"] }),
+  );
+  assert.ok(dec && dec.block === true);
+  assert.match(dec!.reason, /session_write_protected/);
+});
+
+test("dshGuardDecision: clean read tool -> undefined", () => {
+  const event: DshEvent = { toolName: "Read", input: { path: "README.md" } };
+  const dec = dshGuardDecision(event, depsWith({ profile: "autonomous" }));
+  assert.equal(dec, undefined);
 });
 
 // ---------------------------------------------------------------------------
