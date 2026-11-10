@@ -7,7 +7,22 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 // Роли, которые несёт machine-head config.yml modelRoles. Порядок = порядок опроса в binder'е.
-export const ROLES = ["default", "smol", "slow", "producer", "critic", "explorer", "advisor"] as const;
+export const ROLES = ["default", "smol", "slow", "producer", "scaffolder", "critic", "explorer", "advisor"] as const;
+
+/** Last resort when modelRoles + env give no strong model (plan/synthesize/archive_spec). */
+export const STRONG_MODEL_LAST_RESORT = "xai-oauth/grok-4.7";
+
+/** Strong one-shot model: env override → modelRoles producer → slow → default → last resort. */
+export function resolveStrongModel(opts?: { env?: string | null }): string {
+  const fromEnv = (opts?.env ?? "").trim();
+  if (fromEnv) return fromEnv;
+  const roles = parseModelRoles(loadConfigText());
+  for (const k of ["producer", "slow", "default"] as const) {
+    const v = (roles[k] || "").trim();
+    if (v) return v;
+  }
+  return STRONG_MODEL_LAST_RESORT;
+}
 export type Role = (typeof ROLES)[number];
 
 // Маркер границы head↔product в config.yml (head = всё выше). Синхронно с install.ps1/sh.

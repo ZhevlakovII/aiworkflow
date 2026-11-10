@@ -54,7 +54,7 @@ producer, critic (design-роли) · explorer (read-only) · scaffolder (кар
 - narrow handoff (pointer + узкий return).
 - two-stage gate (source↔spec, spec↔ADR) — механически (gateLint), не на глаз. Красный ≠ PASS.
 - critic свежим контекстом, независимо.
-- token-economy: cheap-дефолт, дорогой рычаг (opus critic / fan-out) по классу/blast-radius.
+- token-economy: cheap-дефолт (local/composer), дорогой рычаг (critic / Grok-4.7 / fan-out) по классу/blast-radius.
 
 ## Enforcement-слой (OpenCode-нативно)
 - `opencode.json` — permission (bash pattern-deny = security-backstop; edit allow).

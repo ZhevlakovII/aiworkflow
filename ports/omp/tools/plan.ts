@@ -5,6 +5,7 @@ import type { CustomToolFactory } from "@oh-my-pi/pi-coding-agent";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { runClaudeText } from "./_lib/claudetext";
+import { resolveStrongModel } from "./_lib/modelroles";
 import { ok, err } from "./_lib/result";
 
 const SYS =
@@ -22,12 +23,12 @@ const factory: CustomToolFactory = (pi) => ({
   parameters: pi.zod.object({
     spec: pi.zod.string().describe("путь к спеке/task-file для планирования"),
     out: pi.zod.string().optional().describe("куда писать план (дефолт .workflow/plans/<spec>-plan.md)"),
-    model: pi.zod.string().optional().describe("сильная модель (дефолт sonnet)"),
+    model: pi.zod.string().optional().describe("сильная модель (дефолт: OMP_PLAN_MODEL → modelRoles producer→slow→default)"),
   }),
   async execute(_id, params) {
     const specPath = path.resolve(pi.cwd, params.spec);
     if (!fs.existsSync(specPath)) return err("spec не найден: " + params.spec);
-    const model = params.model || "sonnet";
+    const model = params.model || resolveStrongModel({ env: process.env.OMP_PLAN_MODEL });
     const base = path.basename(params.spec).replace(/\.md$/, "");
     const outRel = params.out || `.workflow/plans/${base}-plan.md`;
     const outPath = path.resolve(pi.cwd, outRel);

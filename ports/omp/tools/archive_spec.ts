@@ -7,6 +7,7 @@ import type { CustomToolFactory } from "@oh-my-pi/pi-coding-agent";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parseBlocksRaw, mergeCanon, emitCanon, injectFrom, buildDedupePrompt, applyDedupe, type RawBlock } from "./_lib/archivespec";
+import { resolveStrongModel } from "./_lib/modelroles";
 import { ok, err } from "./_lib/result";
 
 const BLOCK_RE = /```(spec|fr)\s*\n([\s\S]*?)```/;
@@ -70,14 +71,14 @@ const factory: CustomToolFactory = (pi) => {
       specDir: pi.zod.string().optional().describe("дир канона (дефолт docs/spec)"),
       reconcile: pi.zod.boolean().optional().describe("claude примиряет statement-коллизии (B.2b)"),
       dedupe: pi.zod.boolean().optional().describe("claude ищет cross-id семантик-дубли (B.2b #4c)"),
-      model: pi.zod.string().optional().describe("модель для reconcile/dedupe (дефолт sonnet)"),
+      model: pi.zod.string().optional().describe("модель для reconcile/dedupe (дефолт: OMP_PLAN_MODEL → modelRoles)"),
     }),
     async execute(_id, params) {
       const changeP = path.resolve(pi.cwd, params.change);
       if (!fs.existsSync(changeP)) return err("change-spec не найден: " + params.change);
       const capability = params.capability || "system";
       const specDir = params.specDir || "docs/spec";
-      const model = params.model || "sonnet";
+      const model = params.model || resolveStrongModel({ env: process.env.OMP_PLAN_MODEL });
       const changeId = path.basename(changeP, ".md").replace(/-spec$/, "");
       const canonP = path.resolve(pi.cwd, specDir, `${capability}.md`);
 

@@ -49,7 +49,7 @@ Rail trailer for queue bypass audit: `[dsh-rail:<tool>]`.
 | `DSH_ONESHOT` | `1` enables nested `dsh` for plan/synthesize/reconcile |
 | `DSH_ONESHOT_BIN` | default `dsh` |
 | `DSH_ONESHOT_ARGS` | extra CLI tokens before `-p` |
-| `DSH_PLAN_MODEL` | default model for plan/synthesize |
+| `DSH_PLAN_MODEL` | override for plan/synthesize/archive_spec; else `~/.omp/agent/config.yml` modelRoles (producer→slow→default) → `xai-oauth/grok-4.7` |
 
 ## Mount
 

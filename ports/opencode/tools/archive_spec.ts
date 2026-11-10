@@ -1,38 +1,29 @@
 // archive_spec — delta→archive живая спека как нативный OpenCode-тул (порт OMP tools/archive_spec.ts).
 // Накапливает requirements (SP+FR блоки) из завершённого change-spec в канон docs/spec/<capability>.md.
-// Merge = ГИБРИД ID+модель: детерминир. ID-common-path (ADD/SKIP/COLLISION) + claude -p на трудное
+// Merge = ГИБРИД ID+модель: детерминир. ID-common-path (ADD/SKIP/COLLISION) + omp -p на трудное
 //   (reconcile коллизий statement + cross-ID семантик-dedupe). Ручной вызов lead'ом.
 import { tool } from "@opencode-ai/plugin";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parseBlocksRaw, mergeCanon, emitCanon, injectFrom, buildDedupePrompt, applyDedupe, type RawBlock } from "../lib/archivespec";
+import { runOmpReason } from "../lib/claudetext";
+import { resolveStrongModel } from "../lib/modelroles";
 import { ok, err } from "../lib/result";
-import { exec } from "../lib/exec";
 
 const BLOCK_RE = /```(spec|fr)\s*\n([\s\S]*?)```/;
-
-/** claude -p как чистый ризонер над переданным текстом (без файл-тулов). Возврат result-текста. */
-async function claudeReason(
-  cwd: string, model: string, prompt: string,
-): Promise<{ code: number; text: string; costUsd?: number }> {
-  const r = await exec("claude", ["-p", prompt, "--model", model, "--output-format", "json", "--allowedTools", ""], { cwd });
-  let text = r.stdout, costUsd: number | undefined;
-  try { const j = JSON.parse(r.stdout); text = typeof j.result === "string" ? j.result : r.stdout; costUsd = j.total_cost_usd; } catch { /* raw */ }
-  return { code: r.code, text: text.trim(), costUsd };
-}
 
 export default tool({
   description:
     "Merge'ит requirements (SP+FR) из change-spec в канон docs/spec/<capability>.md по id " +
-    "(ADD/SKIP/COLLISION детерминир.). reconcile=true → claude примиряет statement-коллизии; " +
-    "dedupe=true → claude ищет cross-id семантик-дубли. ADR не архивируется (канон = requirements).",
+    "(ADD/SKIP/COLLISION детерминир.). reconcile=true → strong model примиряет statement-коллизии; " +
+    "dedupe=true → strong model ищет cross-id семантик-дубли. ADR не архивируется (канон = requirements).",
   args: {
     change: tool.schema.string().describe("change-spec (docs/design/<id>-spec.md)"),
     capability: tool.schema.string().optional().describe("канон docs/spec/<cap>.md (дефолт system)"),
     specDir: tool.schema.string().optional().describe("дир канона (дефолт docs/spec)"),
-    reconcile: tool.schema.boolean().optional().describe("claude примиряет statement-коллизии"),
-    dedupe: tool.schema.boolean().optional().describe("claude ищет cross-id семантик-дубли"),
-    model: tool.schema.string().optional().describe("модель для reconcile/dedupe (дефолт sonnet)"),
+    reconcile: tool.schema.boolean().optional().describe("strong model примиряет statement-коллизии"),
+    dedupe: tool.schema.boolean().optional().describe("strong model ищет cross-id семантик-дубли"),
+    model: tool.schema.string().optional().describe("модель для reconcile/dedupe (дефолт: OMP_PLAN_MODEL → modelRoles)"),
   },
   async execute(params, ctx) {
     const cwd = ctx?.directory ?? process.cwd();
@@ -40,7 +31,7 @@ export default tool({
     if (!fs.existsSync(changeP)) return err("change-spec не найден: " + params.change);
     const capability = params.capability || "system";
     const specDir = params.specDir || "docs/spec";
-    const model = params.model || "sonnet";
+    const model = params.model || resolveStrongModel({ env: process.env.OMP_PLAN_MODEL });
     const changeId = path.basename(changeP, ".md").replace(/-spec$/, "");
     const canonP = path.resolve(cwd, specDir, `${capability}.md`);
 
@@ -62,7 +53,7 @@ export default tool({
           "Две версии одного requirement-блока (совпал id, разошёлся statement). Реши: какая актуальна, " +
           "или слей. Верни ОДИН fenced-блок того же вида (```spec или ```fr) с корректными полями " +
           `(id/from/source/statement[/pattern]). Новее — из change '${changeId}'.\n\nСТАРЫЙ:\n${oldB}\n\nНОВЫЙ:\n${newB}`;
-        const r = await claudeReason(cwd, model, prompt);
+        const r = await runOmpReason(cwd, model, prompt);
         totalCost += r.costUsd || 0;
         const mm = BLOCK_RE.exec(r.text);
         if (r.code === 0 && mm) reconcileMap.set(fid, mm[2].replace(/\n+$/, ""));
@@ -70,16 +61,15 @@ export default tool({
     }
     const merged = mergeCanon(incoming, canonText, changeId, (fid) => reconcileMap.get(fid) ?? null);
 
-    // cross-ID семантик-dedupe: claude ищет пары (РАЗНЫЙ id, ТОТ ЖЕ смысл); логика в lib (тестируемо).
     const dupNotes: string[] = [];
     if (params.dedupe && merged.canon.length > 1) {
-      const r = await claudeReason(cwd, model, buildDedupePrompt(merged.canon));
+      const r = await runOmpReason(cwd, model, buildDedupePrompt(merged.canon));
       totalCost += r.costUsd || 0;
       if (r.code === 0) {
         const d = applyDedupe(merged.canon, r.text);
         merged.canon = d.canon;
         dupNotes.push(...d.notes);
-      } else dupNotes.push("dedupe: claude недоступен (пропущено)");
+      } else dupNotes.push("dedupe: strong model недоступен (пропущено)");
     }
 
     fs.mkdirSync(path.dirname(canonP), { recursive: true });

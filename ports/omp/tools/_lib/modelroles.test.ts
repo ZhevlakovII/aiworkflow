@@ -1,6 +1,9 @@
 // Регресс modelroles. Прогон: node .omp/tools/_lib/modelroles.test.ts
 // Проверяет: parseModelRoles, listModels, modelResolves, unresolvedRoles, writeModelRoles (preserve).
-import { parseModelRoles, listModels, modelResolves, unresolvedRoles, writeModelRoles, renderModelRoles, ROLES } from "./modelroles.ts";
+import {
+  parseModelRoles, listModels, modelResolves, unresolvedRoles, writeModelRoles, renderModelRoles, ROLES,
+  resolveStrongModel, STRONG_MODEL_LAST_RESORT,
+} from "./modelroles.ts";
 
 let fails = 0;
 function check(name: string, cond: boolean, got?: unknown) {
@@ -74,6 +77,27 @@ const noRoles = "theme:\n  name: light\n# ===== AIWORKFLOW PRODUCT\nextensions: 
 const ins = writeModelRoles(noRoles, bound);
 check("insert modelRoles when absent", (ins.match(/^modelRoles:/gm) || []).length === 1, ins);
 check("insert keeps theme", ins.includes("name: light"));
+
+// resolveStrongModel
+check("resolveStrongModel env wins", resolveStrongModel({ env: "custom/provider" }) === "custom/provider");
+check("resolveStrongModel trims env", resolveStrongModel({ env: "  x/y  " }) === "x/y");
+check("resolveStrongModel empty env falls through", resolveStrongModel({ env: "   " }) !== "");
+check("STRONG_MODEL_LAST_RESORT", STRONG_MODEL_LAST_RESORT === "xai-oauth/grok-4.7");
+
+function strongFromRoles(roles: Record<string, string>): string {
+  for (const k of ["producer", "slow", "default"] as const) {
+    const v = (roles[k] || "").trim();
+    if (v) return v;
+  }
+  return STRONG_MODEL_LAST_RESORT;
+}
+const roleCfg = `modelRoles:\n  producer: prod/m\n  slow: slow/m\n  default: def/m\n`;
+check("role chain producer", strongFromRoles(parseModelRoles(roleCfg)) === "prod/m");
+const roleCfg2 = `modelRoles:\n  producer:\n  slow: slow-only\n  default: def/m\n`;
+check("role chain slow skip empty producer", strongFromRoles(parseModelRoles(roleCfg2)) === "slow-only");
+const roleCfg3 = `modelRoles:\n  producer:\n  slow:\n  default: def-only\n`;
+check("role chain default", strongFromRoles(parseModelRoles(roleCfg3)) === "def-only");
+check("ROLES includes scaffolder", ROLES.includes("scaffolder"));
 
 console.log(fails ? `\n${fails} FAIL` : "\nALL GREEN");
 process.exit(fails ? 1 : 0);

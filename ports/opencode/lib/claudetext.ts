@@ -1,6 +1,5 @@
-// claudetext (порт OMP _lib/claudetext.ts) — запуск сильной модели как чистого ризонера, возврат ТЕКСТА.
-// Для one-shot synthesis-тулов (plan/synthesize): модель читает (Read/Glob/Grep), МЫСЛИТ, возвращает
-// markdown в stdout; тул сам пишет артефакт (детерминир. output-path). exec — через Bun `$` shim.
+// claudetext (порт OMP _lib/claudetext.ts) — one-shot strong-model text (plan/synthesize, B4).
+// omp native exec; xAI/provider ids from modelRoles work via OMP backend.
 import { exec } from "./exec";
 
 export interface ClaudeText {
@@ -10,25 +9,67 @@ export interface ClaudeText {
   stderr: string;
 }
 
-/** claude -p (read-only tools), --output-format json → {result, total_cost_usd}. Возвращает result-текст. */
+/** Extract assistant text from omp --mode json NDJSON; fallback = raw stdout. */
+function extractOmpText(stdout: string): { text: string; costUsd?: number } {
+  let cost = 0;
+  let anyCost = false;
+  const parts: string[] = [];
+  for (const line of stdout.split("\n")) {
+    const s = line.trim();
+    if (!s.startsWith("{")) continue;
+    let j: Record<string, unknown>;
+    try { j = JSON.parse(s); } catch { continue; }
+    const msg = (j.message ?? j) as Record<string, unknown>;
+    const u = msg.usage as Record<string, unknown> | undefined;
+    const c = (u?.cost as Record<string, unknown> | undefined)?.total;
+    if (c != null) { cost += Number(c); anyCost = true; }
+    const content = msg.content ?? j.content ?? j.result ?? j.text;
+    if (typeof content === "string" && content.trim()) parts.push(content);
+    else if (Array.isArray(content)) {
+      for (const block of content) {
+        if (typeof block === "string" && block.trim()) parts.push(block);
+        else if (block && typeof block === "object" && typeof (block as { text?: string }).text === "string") {
+          const t = (block as { text: string }).text;
+          if (t.trim()) parts.push(t);
+        }
+      }
+    }
+  }
+  const text = parts.length ? parts.join("\n").trim() : stdout.trim();
+  return { text, costUsd: anyCost ? cost : undefined };
+}
+
+/** omp -p (read-only tools), --mode json. Same argv shape as OMP backend omp branch. */
 export async function runClaudeText(
   cwd: string,
   model: string,
   system: string,
   user: string,
 ): Promise<ClaudeText> {
+  const combined = system.trim() ? `${system}\n\n---\n\n${user}` : user;
+  const tools = "Read,Glob,Grep";
   const r = await exec(
-    "claude",
-    ["-p", user, "--model", model, "--output-format", "json",
-     "--append-system-prompt", system, "--allowedTools", "Read,Glob,Grep", "--add-dir", cwd],
+    "omp",
+    ["-p", combined, "--model", model, "--mode", "json", "--tools", tools, "--no-extensions",
+     "--add-dir", cwd, "--cwd", cwd, "--approval-mode", "yolo"],
     { cwd },
   );
-  let text = r.stdout;
-  let costUsd: number | undefined;
-  try {
-    const j = JSON.parse(r.stdout);
-    text = typeof j.result === "string" ? j.result : r.stdout;
-    costUsd = j.total_cost_usd;
-  } catch { /* non-json → raw stdout */ }
-  return { code: r.code, text: text.trim(), costUsd, stderr: r.stderr };
+  const { text, costUsd } = extractOmpText(r.stdout);
+  return { code: r.code, text, costUsd, stderr: r.stderr };
+}
+
+/** omp -p prompt-only (no file tools) — archive_spec reconcile/dedupe. */
+export async function runOmpReason(
+  cwd: string,
+  model: string,
+  prompt: string,
+): Promise<ClaudeText> {
+  const r = await exec(
+    "omp",
+    ["-p", prompt, "--model", model, "--mode", "json", "--tools", "", "--no-extensions",
+     "--add-dir", cwd, "--cwd", cwd, "--approval-mode", "yolo"],
+    { cwd },
+  );
+  const { text, costUsd } = extractOmpText(r.stdout);
+  return { code: r.code, text, costUsd, stderr: r.stderr };
 }

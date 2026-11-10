@@ -1,9 +1,10 @@
 // synthesize — one-shot: читает N спек, выделяет общие черты/расхождения/конфликты (порт OMP tools/synthesize.ts).
-// Утилита ВНЕ автономного контура. Сильная модель (claude -p) read-only мыслит; тул пишет synthesis-артефакт.
+// Утилита ВНЕ автономного контура. Сильная модель (omp -p) read-only мыслит; тул пишет synthesis-артефакт.
 import { tool } from "@opencode-ai/plugin";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { runClaudeText } from "../lib/claudetext";
+import { resolveStrongModel } from "../lib/modelroles";
 import { ok, err } from "../lib/result";
 
 const SYS =
@@ -14,17 +15,17 @@ const SYS =
 export default tool({
   description:
     "One-shot утилита (вне автономного контура): читает N спек/документов и выделяет общие черты, " +
-    "расхождения, конфликты сильной моделью (claude -p, read-only). Пишет synthesis-артефакт, возвращает pointer.",
+    "расхождения, конфликты сильной моделью (omp -p, read-only). Пишет synthesis-артефакт, возвращает pointer.",
   args: {
     specs: tool.schema.array(tool.schema.string()).describe("пути/glob'ы к спекам для синтеза (≥2)"),
     out: tool.schema.string().optional().describe("куда писать синтез (дефолт .workflow/synthesis-<date>.md)"),
-    model: tool.schema.string().optional().describe("сильная модель (дефолт sonnet)"),
+    model: tool.schema.string().optional().describe("сильная модель (дефолт: OMP_PLAN_MODEL → modelRoles producer→slow→default)"),
   },
   async execute(params, ctx) {
     const cwd = ctx?.directory ?? process.cwd();
     if (!params.specs || params.specs.length < 2)
       return err("synthesize требует ≥2 источника (specs)");
-    const model = params.model || "sonnet";
+    const model = params.model || resolveStrongModel({ env: process.env.OMP_PLAN_MODEL });
     const date = new Date().toISOString().slice(0, 10);
     const outRel = params.out || `.workflow/synthesis-${date}.md`;
     const outPath = path.resolve(cwd, outRel);
@@ -35,7 +36,7 @@ export default tool({
       `Верни синтез в markdown: общие черты, расхождения/конфликты, уникальное, рекомендации.`;
     const r = await runClaudeText(cwd, model, SYS, user);
     if (r.code !== 0 || !r.text)
-      return err(`claude rc=${r.code}\n${(r.stderr || "").slice(-1200)}`);
+      return err(`omp rc=${r.code}\n${(r.stderr || "").slice(-1200)}`);
 
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
     fs.writeFileSync(outPath, r.text + "\n", "utf8");

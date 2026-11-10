@@ -4,6 +4,7 @@ import * as path from "node:path";
 import type { DshToolContext } from "./_lib/cordis.ts";
 import { emitToolResult } from "./_lib/cordis.ts";
 import { runDshText } from "./_lib/dshtext.ts";
+import { resolveStrongModel } from "./_lib/modelroles.ts";
 import { ok, err } from "./_lib/result";
 
 const SYS =
@@ -25,7 +26,7 @@ export function registerSynthesize(ctx: DshToolContext): void {
           description: "пути к спекам (≥2)",
         },
         out: { type: "string", description: "дефолт .workflow/synthesis-<date>.md" },
-        model: { type: "string", description: "сильная модель (дефолт sonnet)" },
+        model: { type: "string", description: "сильная модель (дефолт: DSH_PLAN_MODEL → modelRoles producer→slow→default)" },
       },
       required: ["specs"],
     },
@@ -33,7 +34,7 @@ export function registerSynthesize(ctx: DshToolContext): void {
       const specs = params.specs as string[] | undefined;
       if (!specs || specs.length < 2) return emitToolResult(err("synthesize требует ≥2 источника (specs)"));
       const cwd = ctx.cwd;
-      const model = (params.model as string) || process.env.DSH_PLAN_MODEL || "sonnet";
+      const model = (params.model as string) || resolveStrongModel({ env: process.env.DSH_PLAN_MODEL });
       const date = new Date().toISOString().slice(0, 10);
       const outRel = (params.out as string) || `.workflow/synthesis-${date}.md`;
       const outPath = path.resolve(cwd, outRel);

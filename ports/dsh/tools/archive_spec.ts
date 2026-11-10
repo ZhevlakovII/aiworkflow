@@ -12,6 +12,7 @@ import {
   applyDedupe,
 } from "./_lib/archivespec.ts";
 import { runDshText } from "./_lib/dshtext.ts";
+import { resolveStrongModel } from "./_lib/modelroles.ts";
 import { ok, err } from "./_lib/result";
 
 const BLOCK_RE = /```(spec|fr)\s*\n([\s\S]*?)```/;
@@ -40,7 +41,7 @@ export function registerArchiveSpec(ctx: DshToolContext): void {
         specDir: { type: "string", description: "дефолт docs/spec" },
         reconcile: { type: "boolean", description: "resolve statement collisions" },
         dedupe: { type: "boolean", description: "cross-id semantic dedupe" },
-        model: { type: "string", description: "модель reconcile/dedupe (дефолт sonnet)" },
+        model: { type: "string", description: "модель reconcile/dedupe (дефолт: DSH_PLAN_MODEL → modelRoles)" },
       },
       required: ["change"],
     },
@@ -50,7 +51,7 @@ export function registerArchiveSpec(ctx: DshToolContext): void {
       if (!fs.existsSync(changeP)) return emitToolResult(err("change-spec не найден: " + params.change));
       const capability = (params.capability as string) || "system";
       const specDir = (params.specDir as string) || "docs/spec";
-      const model = (params.model as string) || "sonnet";
+      const model = (params.model as string) || resolveStrongModel({ env: process.env.DSH_PLAN_MODEL });
       const changeId = path.basename(changeP, ".md").replace(/-spec$/, "");
       const canonP = path.resolve(cwd, specDir, `${capability}.md`);
 

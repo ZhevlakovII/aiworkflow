@@ -4,6 +4,7 @@ import * as path from "node:path";
 import type { DshToolContext } from "./_lib/cordis.ts";
 import { emitToolResult } from "./_lib/cordis.ts";
 import { runDshText } from "./_lib/dshtext.ts";
+import { resolveStrongModel } from "./_lib/modelroles.ts";
 import { ok, err } from "./_lib/result";
 
 const SYS =
@@ -22,7 +23,7 @@ export function registerPlan(ctx: DshToolContext): void {
       properties: {
         spec: { type: "string", description: "путь к спеке/task-file" },
         out: { type: "string", description: "куда писать план (дефолт .workflow/plans/<spec>-plan.md)" },
-        model: { type: "string", description: "сильная модель (дефолт sonnet)" },
+        model: { type: "string", description: "сильная модель (дефолт: DSH_PLAN_MODEL → modelRoles producer→slow→default)" },
       },
       required: ["spec"],
     },
@@ -30,7 +31,7 @@ export function registerPlan(ctx: DshToolContext): void {
       const cwd = ctx.cwd;
       const specPath = path.resolve(cwd, String(params.spec));
       if (!fs.existsSync(specPath)) return emitToolResult(err("spec не найден: " + params.spec));
-      const model = (params.model as string) || process.env.DSH_PLAN_MODEL || "sonnet";
+      const model = (params.model as string) || resolveStrongModel({ env: process.env.DSH_PLAN_MODEL });
       const base = path.basename(String(params.spec)).replace(/\.md$/, "");
       const outRel = (params.out as string) || `.workflow/plans/${base}-plan.md`;
       const outPath = path.resolve(cwd, outRel);

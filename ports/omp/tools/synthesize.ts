@@ -4,6 +4,7 @@ import type { CustomToolFactory } from "@oh-my-pi/pi-coding-agent";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { runClaudeText } from "./_lib/claudetext";
+import { resolveStrongModel } from "./_lib/modelroles";
 import { ok, err } from "./_lib/result";
 
 const SYS =
@@ -21,12 +22,12 @@ const factory: CustomToolFactory = (pi) => ({
   parameters: pi.zod.object({
     specs: pi.zod.array(pi.zod.string()).describe("пути/glob'ы к спекам для синтеза (≥2)"),
     out: pi.zod.string().optional().describe("куда писать синтез (дефолт .workflow/synthesis-<date>.md)"),
-    model: pi.zod.string().optional().describe("сильная модель (дефолт sonnet)"),
+    model: pi.zod.string().optional().describe("сильная модель (дефолт: OMP_PLAN_MODEL → modelRoles producer→slow→default)"),
   }),
   async execute(_id, params) {
     if (!params.specs || params.specs.length < 2)
       return err("synthesize требует ≥2 источника (specs)");
-    const model = params.model || "sonnet";
+    const model = params.model || resolveStrongModel({ env: process.env.OMP_PLAN_MODEL });
     const date = new Date().toISOString().slice(0, 10);
     const outRel = params.out || `.workflow/synthesis-${date}.md`;
     const outPath = path.resolve(pi.cwd, outRel);
