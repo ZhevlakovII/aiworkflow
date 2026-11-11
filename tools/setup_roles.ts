@@ -16,7 +16,7 @@ import { stdin, stdout } from "node:process";
 import {
   ROLES, parseModelRoles, listModels, modelResolves, unresolvedRoles, writeModelRoles,
   type ModelRef,
-} from "../.omp/tools/_lib/modelroles.ts";
+} from "../ports/omp/tools/_lib/modelroles.ts";
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(name);
