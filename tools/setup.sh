@@ -17,6 +17,8 @@
 # agents/*.md already at dest - A3 req 4).
 #
 # Flow notes: `all` includes cursor; `both` stays omp+claude+opencode ONLY (no cursor).
+# Multi-flow installs only flavors whose CLI is present; aborts if none of
+# OMP/Claude/OpenCode/DSH is available (exception: --flow cursor only).
 #
 # Usage:
 #   bash tools/setup.sh --check            # dry-run (writes nothing; lists what is installable)
@@ -134,17 +136,19 @@ pkg_for() {
 
 # --- 1. Prereqs ---
 # fields: name|cmd|verargs|required|hint
-# requiredness by flavor: OMP needs omp+node; Claude Code needs claude CLI. git/ast-index both.
+# Harness CLIs (omp/claude/opencode/dsh) are soft/optional: still probe + offer install recipes,
+# but NEVER enter missing_required solely because the flow flag selected them. After the loop,
+# soft-disable selected flavors whose CLI is still absent. git/ast-index stay hard-required.
+# Node becomes required when any remaining selected flavor needs render/install (via node).
 # T7-6 (contract L-3): python prereq removed — the rails/drivers were all ported to node
 # (core/src/**), no tools/*.py left, nothing here shells out to python anymore.
-if [ "$DO_CLAUDE" = "1" ]; then claude_req=1; claude_hint="https://claude.ai/code (not npm; ToS-safe worker) - REQUIRED for claude flavor";
-else claude_req=0; claude_hint="https://claude.ai/code (not npm; needed only for claude delegation backend)"; fi
+claude_hint="https://claude.ai/code (not npm; ToS-safe worker) - optional; skipped if absent"
 prereqs=(
-    "OMP (oh-my-pi)|omp|--version|$DO_OMP|https://omp.sh (native binary)"
-    "Node.js >=24|node|--version|$DO_OMP|use nvm or distro pkg"
-    "Claude CLI|claude|--version|$claude_req|$claude_hint"
-    "OpenCode|opencode|--version|$DO_OPENCODE|https://opencode.ai (TUI/Desktop) - REQUIRED for opencode flavor"
-    "DSH (DeepSeek)|dsh|--version|$DO_DSH|DeepSeek Harness (Cordis) - REQUIRED for dsh flavor"
+    "OMP (oh-my-pi)|omp|--version|0|https://omp.sh (native binary) - optional; skipped if absent"
+    "Node.js >=24|node|--version|0|use nvm or distro pkg - needed to render/install flavors"
+    "Claude CLI|claude|--version|0|$claude_hint"
+    "OpenCode|opencode|--version|0|https://opencode.ai (TUI/Desktop) - optional; skipped if absent"
+    "DSH (DeepSeek)|dsh|--version|0|DeepSeek Harness (Cordis) - optional; skipped if absent"
     "git|git|--version|1|apt/brew install git"
     "ast-index|ast-index|version|1|install ast-index CLI (Track A discovery)"
     "Java 21 (opt)|java|-version|0|only for KMP target (gradle test-cmd)"
@@ -211,6 +215,48 @@ if [ -n "$missing_required" ] && [ "$CHECK" = "0" ]; then
     echo "ABORT: missing required prereqs:$missing_required" >&2
     echo "Install them (hints above) and re-run. Use --yes to auto-install installable ones." >&2
     exit 1
+fi
+
+# Soft-disable selected flavors whose harness CLI is still missing (re-probe after optional installs).
+if [ "$DO_OMP" = "1" ] && ! command -v omp >/dev/null 2>&1; then
+    echo "[skip] OMP CLI absent - omp flavor not installed"
+    DO_OMP=0
+fi
+if [ "$DO_CLAUDE" = "1" ] && ! command -v claude >/dev/null 2>&1; then
+    echo "[skip] Claude CLI absent - claude flavor not installed"
+    DO_CLAUDE=0
+fi
+if [ "$DO_OPENCODE" = "1" ] && ! command -v opencode >/dev/null 2>&1; then
+    echo "[skip] OpenCode CLI absent - opencode flavor not installed"
+    DO_OPENCODE=0
+fi
+if [ "$DO_DSH" = "1" ] && ! command -v dsh >/dev/null 2>&1; then
+    echo "[skip] DSH CLI absent - dsh flavor not installed"
+    DO_DSH=0
+fi
+
+if [ "$CHECK" = "0" ]; then
+    # Abort when none of the four harness CLIs can back a selected flavor (cursor-only is the exception).
+    if [ "$DO_OMP" != "1" ] && [ "$DO_CLAUDE" != "1" ] && [ "$DO_OPENCODE" != "1" ] && [ "$DO_DSH" != "1" ]; then
+        if [ "$FLOW" != "cursor" ]; then
+            if command -v omp >/dev/null 2>&1 || command -v claude >/dev/null 2>&1 || command -v opencode >/dev/null 2>&1 || command -v dsh >/dev/null 2>&1; then
+                echo "ABORT: selected flow '$FLOW' has no installable harness CLI on PATH." >&2
+                echo "Install the matching CLI for that flow, or use --flow all to install whatever is present." >&2
+            else
+                echo "ABORT: none of OMP/Claude/OpenCode/DSH CLI is present; need at least one harness (or use --flow cursor)." >&2
+                echo "Install one of those harness CLIs and re-run setup." >&2
+            fi
+            exit 1
+        fi
+    fi
+    # Node required when any remaining selected flavor still runs (installers render via node).
+    if [ "$DO_OMP" = "1" ] || [ "$DO_CLAUDE" = "1" ] || [ "$DO_OPENCODE" = "1" ] || [ "$DO_CURSOR" = "1" ] || [ "$DO_DSH" = "1" ]; then
+        if ! command -v node >/dev/null 2>&1; then
+            echo "ABORT: missing required prereqs: Node.js >=24" >&2
+            echo "Install them (hints above) and re-run. Use --yes to auto-install installable ones." >&2
+            exit 1
+        fi
+    fi
 fi
 
 if [ "$DO_OMP" = "1" ]; then

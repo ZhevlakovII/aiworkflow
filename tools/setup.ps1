@@ -16,6 +16,8 @@
 # agents/*.md already at dest - A3 req 4).
 #
 # Flow notes: `all` includes cursor; `both` stays omp+claude+opencode ONLY (no cursor).
+# Multi-flow installs only flavors whose CLI is present; aborts if none of
+# OMP/Claude/OpenCode/DSH is available (exception: -Flow cursor only).
 #
 # POSIX twin: tools/setup.sh (linux/macos), identical steps.
 # NOTE: ASCII-only on purpose - PS 5.1 parses .ps1 as cp1251 without a BOM, so non-ASCII breaks it.
@@ -98,17 +100,19 @@ Write-Host "canon:  $Canon"
 Write-Host "global: $Global`n"
 
 # --- 1. Prereqs ---
-# requiredness depends on flavor: OMP needs omp+node; Claude Code needs claude CLI. git/ast-index both.
+# Harness CLIs (omp/claude/opencode/dsh) are soft/optional: still probe + offer install recipes,
+# but NEVER enter missingRequired solely because the flow flag selected them. After the loop,
+# soft-disable selected flavors whose CLI is still absent. git/ast-index stay hard-required.
+# Node becomes required when any remaining selected flavor needs render/install (via node).
 # T7-6 (contract L-3): python prereq removed — the rails/drivers were all ported to node
 # (core/src/**), no tools/*.py left, nothing here shells out to python anymore.
-$claudeHint = 'https://claude.ai/code (not npm; ToS-safe worker)'
-$claudeHint += if ($doClaude) { ' - REQUIRED for the claude flow flavor' } else { ' - needed only for claude delegation backend' }
+$claudeHint = 'https://claude.ai/code (not npm; ToS-safe worker) - optional; skipped if absent'
 $prereqs = @(
-    @{ name='OMP (oh-my-pi)'; cmd='omp';       args=@('--version'); required=$doOmp;    hint='https://omp.sh (native x64 binary)' },
-    @{ name='Node.js >=24';   cmd='node';      args=@('--version'); required=$doOmp;    hint='winget install OpenJS.NodeJS  (or nvm)' },
-    @{ name='Claude CLI';     cmd='claude';    args=@('--version'); required=$doClaude; hint=$claudeHint },
-    @{ name='OpenCode';       cmd='opencode';  args=@('--version'); required=$doOpencode; hint='https://opencode.ai (TUI/Desktop) - REQUIRED for opencode flow flavor' },
-    @{ name='DSH (DeepSeek)'; cmd='dsh';      args=@('--version'); required=$doDsh;      hint='DeepSeek Harness (Cordis) - REQUIRED for dsh flow flavor' },
+    @{ name='OMP (oh-my-pi)'; cmd='omp';       args=@('--version'); required=$false; hint='https://omp.sh (native x64 binary) - optional; skipped if absent' },
+    @{ name='Node.js >=24';   cmd='node';      args=@('--version'); required=$false; hint='winget install OpenJS.NodeJS  (or nvm) - needed to render/install flavors' },
+    @{ name='Claude CLI';     cmd='claude';    args=@('--version'); required=$false; hint=$claudeHint },
+    @{ name='OpenCode';       cmd='opencode';  args=@('--version'); required=$false; hint='https://opencode.ai (TUI/Desktop) - optional; skipped if absent' },
+    @{ name='DSH (DeepSeek)'; cmd='dsh';      args=@('--version'); required=$false; hint='DeepSeek Harness (Cordis) - optional; skipped if absent' },
     @{ name='git';            cmd='git';       args=@('--version'); required=$true;     hint='winget install Git.Git' },
     @{ name='ast-index';      cmd='ast-index'; args=@('version');   required=$true;     hint='install ast-index CLI (Track A discovery)' },
     @{ name='Java 21 (opt)';  cmd='java';      args=@('-version');  required=$false;    hint='only for KMP target (gradle test-cmd)' },
@@ -175,6 +179,52 @@ if ($missingRequired.Count -gt 0 -and -not $Check) {
     Write-Host "Install them (hints above) and re-run setup. Use -Yes to auto-install installable ones."
     Write-Host "NOTE: winget/scoop may need a NEW shell for PATH to pick up freshly installed tools." -ForegroundColor DarkGray
     exit 1
+}
+
+# Soft-disable selected flavors whose harness CLI is still missing (re-probe after optional installs).
+if ($doOmp -and -not (Get-Command omp -ErrorAction SilentlyContinue)) {
+    Write-Host '[skip] OMP CLI absent - omp flavor not installed' -ForegroundColor Yellow
+    $doOmp = $false
+}
+if ($doClaude -and -not (Get-Command claude -ErrorAction SilentlyContinue)) {
+    Write-Host '[skip] Claude CLI absent - claude flavor not installed' -ForegroundColor Yellow
+    $doClaude = $false
+}
+if ($doOpencode -and -not (Get-Command opencode -ErrorAction SilentlyContinue)) {
+    Write-Host '[skip] OpenCode CLI absent - opencode flavor not installed' -ForegroundColor Yellow
+    $doOpencode = $false
+}
+if ($doDsh -and -not (Get-Command dsh -ErrorAction SilentlyContinue)) {
+    Write-Host '[skip] DSH CLI absent - dsh flavor not installed' -ForegroundColor Yellow
+    $doDsh = $false
+}
+
+if (-not $Check) {
+    # Abort when none of the four harness CLIs can back a selected flavor (cursor-only is the exception).
+    $anyHarness = $doOmp -or $doClaude -or $doOpencode -or $doDsh
+    if (-not $anyHarness -and $Flow -ne 'cursor') {
+        $anyPresent = (Get-Command omp -ErrorAction SilentlyContinue) -or
+            (Get-Command claude -ErrorAction SilentlyContinue) -or
+            (Get-Command opencode -ErrorAction SilentlyContinue) -or
+            (Get-Command dsh -ErrorAction SilentlyContinue)
+        if (-not $anyPresent) {
+            Write-Host 'ABORT: none of OMP/Claude/OpenCode/DSH CLI is present; need at least one harness (or use -Flow cursor).' -ForegroundColor Red
+            Write-Host 'Install one of those harness CLIs and re-run setup.'
+        } else {
+            Write-Host ("ABORT: selected flow '{0}' has no installable harness CLI on PATH." -f $Flow) -ForegroundColor Red
+            Write-Host 'Install the matching CLI for that flow, or use -Flow all to install whatever is present.'
+        }
+        exit 1
+    }
+    # Node required when any remaining selected flavor still runs (installers render via node).
+    if ($doOmp -or $doClaude -or $doOpencode -or $doCursor -or $doDsh) {
+        if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+            Write-Host 'ABORT: missing required prereqs: Node.js >=24' -ForegroundColor Red
+            Write-Host 'Install them (hints above) and re-run setup. Use -Yes to auto-install installable ones.'
+            Write-Host 'NOTE: winget/scoop may need a NEW shell for PATH to pick up freshly installed tools.' -ForegroundColor DarkGray
+            exit 1
+        }
+    }
 }
 
 if ($doOmp) {
