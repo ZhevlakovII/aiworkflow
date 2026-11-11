@@ -11,56 +11,42 @@
 
 Карта / статус / ключи (RU): [`docs/map.md`](docs/map.md) · [`docs/status.md`](docs/status.md) · [`docs/keys.md`](docs/keys.md). EN → [`docs/en/`](docs/en/). Исторические design/research остаются в локальном (private) каноне, не в публичном installable-дереве.
 
-Выбор инсталлером: `--flow omp|claude|opencode|all` (дефолт `all` = omp+claude+opencode; `both` — deprecated
-алиас `all`). Все три ставятся одинаково (setup/bootstrap/свой installer). В этом репо **нет** live dogfood `.<client>/` — installer SRC под `ports/` (в т.ч. `ports/cursor/`, `ports/omp/`); installers stamp consumer `.<client>/`. У opencode флоу идёт **без
-команды** (always-on `AGENTS.md` governs дефолтный `build`-агент) или явными `/aiwf-*` командами.
+Выбор инсталлером: `--flow omp|claude|opencode|cursor|dsh|all|both` (дефолт `all` = omp+claude+opencode+cursor+dsh; `both` = omp+claude+opencode без cursor/dsh). В этом репо **нет** live dogfood `.<client>/` — installer SRC под `ports/`; installers stamp consumer. У opencode флоу идёт **без команды** (always-on AGENTS.md) или явными /aiwf-* командами.
 
 ## Установка (одна команда)
 
-Раскатка на mac/linux/windows. Bootstrap клонит репо в `~/.aiworkflow` и запускает setup
-(детект prereq → **интерактивная установка** через brew/apt/winget/scoop → накат продукта → smoke).
+Раскатка mac/linux/windows. Bootstrap **качает** release zip + sha256 (не клонирует `~/.aiworkflow` как runtime root),
+verify → extract cache → setup from cache → delete cache **only on success** (fail: retain + print path).
+Dest получает vendored `<dest>/core/src`. Shared head: `AIWF_CONFIG_HOME` → `$XDG_CONFIG_HOME/aiwf` → `~/.config/aiwf`.
+
+Flow: `--flow omp|claude|opencode|cursor|dsh|all|both`. Дефолт `all` = omp+claude+opencode+**cursor**+**dsh**.
+`both` = omp+claude+opencode (без cursor/dsh). Harness CLI soft-optional на multi-flow.
 
 **macOS / Linux:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ZhevlakovII/aiworkflow/main/bootstrap.sh | bash
-# non-interactive (авто-ставит installable prereq):
-curl -fsSL https://raw.githubusercontent.com/ZhevlakovII/aiworkflow/main/bootstrap.sh | bash -s -- --yes
+# non-interactive:
+curl -fsSL .../bootstrap.sh | bash -s -- --yes
 ```
 
 **Windows (PowerShell):**
 ```powershell
 irm https://raw.githubusercontent.com/ZhevlakovII/aiworkflow/main/bootstrap.ps1 | iex
-# с флагами (irm|iex не берёт аргументы напрямую):
 $b = irm https://raw.githubusercontent.com/ZhevlakovII/aiworkflow/main/bootstrap.ps1
 & ([scriptblock]::Create($b)) -Yes
+& ([scriptblock]::Create($b)) -Flow all
 ```
 
-**Только Claude Code flavor:**
-```bash
-curl -fsSL .../bootstrap.sh | bash -s -- --flow claude          # глобал ~/.claude
-```
-```powershell
-& ([scriptblock]::Create($b)) -Flow claude                       # или -Flow claude -Target C:\proj
-```
-После CC-установки перезапусти сессию Claude Code (hooks из `settings.json` — на старте сессии).
+**Только Claude Code:** `--flow claude` / `-Flow claude` (после — рестарт сессии CC).
 
-**Только OpenCode flavor:**
-```bash
-curl -fsSL .../bootstrap.sh | bash -s -- --flow opencode         # глобал ~/.config/opencode
-```
-```powershell
-& ([scriptblock]::Create($b)) -Flow opencode                     # или -Flow opencode -Target C:\proj
-```
-Открой проект в OpenCode (TUI/Desktop) — флоу идёт без команды (`AGENTS.md` → `build`-агент) или через `/aiwf-*`.
+**Только OpenCode:** `--flow opencode` / `-Flow opencode`.
 
-Уже склонировал репо? Запусти setup напрямую — `bash tools/setup.sh` / `tools/setup.ps1`
-(`--check`/`-Check` = dry-run; `--flow`/`-Flow` = выбор подложки). Детали, флаги, обновление,
-machine-специфика — в [INSTALL.md](INSTALL.md).
+**Cursor / DSH:** `-Flow cursor` / `-Flow dsh` (входят в default all).
 
-Ставит выбором всё: `omp` (upstream-инсталлер omp.sh), `ast-index` (winget на Windows /
-GitHub-release бинарь на mac/linux), `node`/`git`/`java` (pkg-mgr), `codex` (npm). Только
-`claude` руками (не npm, ToS-safe) — печатается хинт.
+Уже есть checkout SRC? `bash tools/setup.sh` / `tools/setup.ps1` (`--check`, `--flow`).
+Update = re-bootstrap (head preserved). Детали — [INSTALL.md](INSTALL.md).
 
+Ставит выбором: omp (upstream), ast-index, node/git/java (pkg-mgr), codex (npm). claude — руками (хинт).
 ## Цель
 
 Дать агентам SDLC-дисциплину, которую не даёт ни один харнесс из коробки:
@@ -156,7 +142,7 @@ statement: WHEN abs is called on a negative Money THE SYSTEM SHALL return its po
 
 ## Установка
 
-См. [INSTALL.md](INSTALL.md). All-in-one (prereq-детект → machine-head bootstrap → install → load-smoke):
+См. [INSTALL.md](INSTALL.md). All-in-one (prereq → shared-head seed/import → install vendor+rewrite → load-smoke):
 `powershell -File tools/setup.ps1` (Windows) / `bash tools/setup.sh` (linux/macos). Только копирование
 канона — `tools/install.ps1` / `tools/install.sh`. Канон `ports/omp` → глобальный `~/.omp/agent` (продукт);
 проектный `.omp/` несёт только `zonemap.yml`.

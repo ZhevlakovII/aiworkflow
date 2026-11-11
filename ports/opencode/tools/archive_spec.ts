@@ -1,6 +1,6 @@
 // archive_spec — delta→archive живая спека как нативный OpenCode-тул (порт OMP tools/archive_spec.ts).
 // Накапливает requirements (SP+FR блоки) из завершённого change-spec в канон docs/spec/<capability>.md.
-// Merge = ГИБРИД ID+модель: детерминир. ID-common-path (ADD/SKIP/COLLISION) + omp -p на трудное
+// Merge = ГИБРИД ID+модель: детерминир. ID-common-path (ADD/SKIP/COLLISION) + opencode reason oneshot на трудное
 //   (reconcile коллизий statement + cross-ID семантик-dedupe). Ручной вызов lead'ом.
 import { tool } from "@opencode-ai/plugin";
 import * as fs from "node:fs";
@@ -31,7 +31,8 @@ export default tool({
     if (!fs.existsSync(changeP)) return err("change-spec не найден: " + params.change);
     const capability = params.capability || "system";
     const specDir = params.specDir || "docs/spec";
-    const model = params.model || resolveStrongModel({ env: process.env.OMP_PLAN_MODEL });
+    const model = (params.model || "").trim() || resolveStrongModel({ env: process.env.OMP_PLAN_MODEL });
+    if (!model && (params.reconcile || params.dedupe)) return err("no model id: pass model arg, set OMP_PLAN_MODEL, or shared-head modelRoles producer/slow/default");
     const changeId = path.basename(changeP, ".md").replace(/-spec$/, "");
     const canonP = path.resolve(cwd, specDir, `${capability}.md`);
 

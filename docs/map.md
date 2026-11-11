@@ -16,6 +16,12 @@
 
 Проектные оверлеи (опциональная заполненная `zonemap.yml` / `delegation.yml`, свои агенты) живут в **consumer**-проекте, не в canon. Пустой zonemap инсталлер **не** сеет; отсутствие файла нормально → executor.
 
+
+## Shared head + runtime dest
+
+- Shared head (models/modelRoles): `AIWF_CONFIG_HOME` → `$XDG_CONFIG_HOME/aiwf` → `~/.config/aiwf`.
+- Install dest (each flavor) vendors `core/src` at `<dest>/core/src`; bootstrap cache and `~/.aiworkflow` are not runtime roots.
+- Default flow `all` includes cursor + dsh (same as setup).
 ## Макро-путь
 
 Дефолт: `classify → design? → execute → gate → report`. Каталог стадий (7) и opt-in plan/scaffold — в `docs/keys.md`.

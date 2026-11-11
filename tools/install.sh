@@ -6,9 +6,9 @@
 # splice semantics -> both installers are idempotent and interoperable.
 #
 # Installer:
-#   1) mirrors tools/ hooks/ (rsync --delete - removes stale files; copied .ts files
-#      importing `(../)+core/src/...` get that rewritten to the absolute clone path
-#      since core/ itself is not copied - phase-b1.1);
+#   1) mirrors tools/ hooks/ (rsync --delete - removes stale files); vendored
+#      core/src lands at <dest>/core/src; TS imports of (../)+core/src/ are rewritten
+#      file-relative into that dest tree via tools/install-runtime.ts (not clone abs);
 #   1b) agents/: renders `canon/roles` + `tools/adapters/omp.yml` into a fresh temp
 #      dir (`node core/src/render/cli.ts render --out <tmp> --clients omp`) and
 #      installs FROM THAT RENDER, never from a committed port copy (A3 req 2 - a
@@ -124,15 +124,40 @@ write_gitignore_block() { # $1 targetRoot $2 flavor $3 bodyText (no begin/end ma
     fi
 }
 
-# REPO_ABS: absolute clone path used to rewrite copied .ts imports (see rewrite_core_imports_tree
-# below). On Windows git-bash, $REPO is MSYS-style (/c/Users/...) - fine for bash file ops, but the
-# rewritten import string must be a real Windows path (C:/Users/..., forward slashes - Bun accepts
-# it); cygpath -m gives exactly that. Elsewhere (linux/macos) cygpath is absent -> REPO_ABS = REPO.
+# DEST_ABS: absolute dest for install-runtime / logs (cygpath on git-bash when present).
 if command -v cygpath >/dev/null 2>&1; then
   REPO_ABS="$(cygpath -m "$REPO")"
+  DEST_ABS="$(cygpath -m "$DEST")"
 else
   REPO_ABS="$REPO"
+  DEST_ABS="$DEST"
 fi
+
+RUNTIME_TS="$REPO/tools/install-runtime.ts"
+
+invoke_install_runtime() {
+  node "$RUNTIME_TS" "$@" || { echo "install-runtime failed: $*" >&2; exit 1; }
+}
+
+invoke_aiwf_vendor() {
+  if [ "$CHECK" -eq 1 ]; then
+    echo "[check] would vendor core/src -> $DEST_ABS/core/src"
+  else
+    invoke_install_runtime vendor --repo "$REPO_ABS" --dest "$DEST_ABS"
+  fi
+}
+
+# Dest-shaped shadow: copy src to <root>/<relUnder>/ then rewrite-imports with dest=root.
+new_import_rewritten_shadow() { # $1 srcDir $2 relUnder -> prints shadowRoot
+  local srcDir="$1" relUnder="$2" shadowRoot shadowSub parent
+  shadowRoot="$(mktemp -d)"
+  shadowSub="$shadowRoot/$relUnder"
+  parent="$(dirname "$shadowSub")"
+  mkdir -p "$parent"
+  cp -Rp "$srcDir/." "$shadowSub/"
+  invoke_install_runtime rewrite-imports --dest "$shadowRoot" --under "$shadowSub"
+  printf '%s' "$shadowRoot"
+}
 
 [ -d "$CANON" ] || { echo "canon not found: $CANON" >&2; exit 1; }
 [ "$CHECK" -eq 1 ] || mkdir -p "$DEST"
@@ -163,42 +188,18 @@ tree_diff_count() {
     echo "$n"
 }
 
-# Rewrite copied .ts imports of `(../)+core/src/...` -> absolute clone `$REPO_ABS/core/src/...`
-# (precedent: tools/install-claude.sh). core/ is not copied, so relative imports in the deployed
-# tools/_lib/*.ts would otherwise point into a void. Applied to a temp SHADOW of the canon tree
-# before mirroring, so --check (diffed against the shadow) and the real copy always agree post-
-# rewrite - no perpetual false drift (contract L-3).
-CORE_RE='(\.\./)+core/src/'
-CORE_ABS="$REPO_ABS/core/src/"
-rewrite_core_imports_tree() { # $1 = dir; rewrite *.ts matching CORE_RE in place
-    local d="$1" f rewritten origEpoch
-    [ -d "$d" ] || return 0
-    while IFS= read -r -d '' f; do
-        if grep -qE "$CORE_RE" "$f" 2>/dev/null; then
-            # Preserve the ORIGINAL (pre-rewrite) mtime: a plain `> "$f"` write stamps "now", which
-            # would make an mtime-aware diff (rsync's default quick check) flag this file as
-            # "changed" forever - both at real-install time and at every later --check - even when
-            # the rewritten content is byte-identical to what's already installed - perpetual false
-            # drift (contract L-3). Restoring the source's own mtime keeps it deterministic instead.
-            origEpoch="$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || true)"
-            rewritten="$(sed -E "s#$CORE_RE#$CORE_ABS#g" "$f")"
-            printf '%s\n' "$rewritten" > "$f"
-            [ -n "$origEpoch" ] && touch -d "@$origEpoch" "$f" 2>/dev/null
-        fi
-    done < <(find "$d" -name '*.ts' -print0)
-}
-
 SHADOW_ROOT="$(mktemp -d)"
 trap 'rm -rf "$SHADOW_ROOT"' EXIT
+
+invoke_aiwf_vendor
 
 # --- 1. Mirror tools/hooks (agents are handled separately in 1b, from canon render) ---
 for t in tools hooks; do
     src="$CANON/$t"
     dst="$DEST/$t"
     [ -d "$src" ] || continue
-    shadow="$SHADOW_ROOT/$t"
-    mkdir -p "$shadow"; cp -Rp "$src/." "$shadow/"
-    rewrite_core_imports_tree "$shadow"
+    shaped_root="$(new_import_rewritten_shadow "$src" "$t")"
+    shadow="$shaped_root/$t"
     if [ "$CHECK" -eq 1 ]; then
         if [ "$have_rsync" -eq 1 ]; then
             n=$(rsync -a --delete -n -i "$shadow/" "$dst/" 2>/dev/null | grep -c . || true)
@@ -215,7 +216,18 @@ for t in tools hooks; do
         fi
         echo "[sync] $t/ mirrored"
     fi
+    rm -rf "$shaped_root"
 done
+# Real install: rewrite again on dest (heal prior clone-abs installs).
+if [ "$CHECK" -eq 0 ]; then
+  ri_args=(rewrite-imports --dest "$DEST_ABS")
+  for t in tools hooks; do
+    [ -d "$DEST/$t" ] && ri_args+=(--under "$DEST_ABS/$t")
+  done
+  if [ "${#ri_args[@]}" -gt 3 ]; then
+    invoke_install_runtime "${ri_args[@]}"
+  fi
+fi
 
 # --- 1b. Agents: render canon fresh (A3 req 2 - never install from a committed port copy) ---
 command -v node >/dev/null 2>&1 || { echo "node not found on PATH - required to render canon agents (core/src/render/cli.ts)" >&2; exit 1; }

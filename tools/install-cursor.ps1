@@ -10,8 +10,8 @@
   (project-scoped).
 
   Templates in the repo keep the literal token <clone>. On install, Rewrite-Clone replaces
-  every <clone> with the ABSOLUTE clone path (hooks.json + skills). Hook command becomes
-  node "<abs>/core/src/shim/command-hook.ts" cursor.
+  every <clone> with the ABSOLUTE path inside <dest> (hooks.json + skills + agents) after
+  core/src is vendored into dest. Hook command becomes node "<dest>/core/src/shim/...".
 
   Agents/*.md are NOT copied from a committed port copy: every install renders
   canon/roles + tools/adapters/cursor.yml into a temp dir
@@ -92,7 +92,22 @@ function Set-ManagedGitignoreBlock($targetRoot, $flavor, [string[]]$ignoreLines,
 }
 
 function Rewrite-Clone([string]$text) {
-    return $text.Replace('<clone>', $repoFwd)
+    # <clone> -> dest abs (not repo). rewrite-commands also heals leftover clone roots.
+    return $text.Replace('<clone>', $destFwd)
+}
+
+$runtimeTs = Join-Path $repo 'tools\install-runtime.ts'
+$destFwd = ($dest -replace '\\', '/')
+
+function Invoke-InstallRuntime {
+    param([Parameter(Mandatory = $true)][string[]]$RtArgs)
+    $out = & node $runtimeTs @RtArgs 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw ("install-runtime failed ({0}): {1}" -f $LASTEXITCODE, ($out | Out-String))
+    }
+    foreach ($line in @($out)) {
+        if (("$line").Trim().Length -gt 0) { Write-Host $line }
+    }
 }
 
 Write-Host "flavor: cursor" -ForegroundColor Cyan
@@ -109,6 +124,12 @@ if (-not $nodeVersion) {
 Write-Host ""
 
 if (-not $Check) { New-Item -ItemType Directory -Force -Path $dest | Out-Null }
+if ($Check) {
+    Write-Host ("[check] would vendor core/src -> {0}/core/src" -f $destFwd)
+} else {
+    Invoke-InstallRuntime @('vendor', '--repo', $repo, '--dest', $dest)
+}
+
 
 # --- 1. agents/: render canon fresh ---
 $renderTmp = Join-Path $env:TEMP ("aiwf-render-cursor-" + [guid]::NewGuid().ToString("N"))
@@ -163,9 +184,10 @@ try {
     Remove-Item -Recurse -Force $renderTmp -ErrorAction SilentlyContinue
 }
 
-# --- 2. skills/ (rewrite <clone> -> absolute clone path) ---
+# --- 2. skills/ (rewrite <clone> -> absolute dest path) ---
 $skillsSrc = Join-Path $src 'skills'
 $skillsDst = Join-Path $dest 'skills'
+$cmdRewriteFiles = New-Object System.Collections.Generic.List[string]
 if (Test-Path $skillsSrc) {
     if (-not $Check) { New-Item -ItemType Directory -Force -Path $skillsDst | Out-Null }
     foreach ($dir in Get-ChildItem $skillsSrc -Directory) {
@@ -180,12 +202,13 @@ if (Test-Path $skillsSrc) {
         } else {
             New-Item -ItemType Directory -Force -Path $outDir | Out-Null
             [System.IO.File]::WriteAllText($out, $body, (New-Object System.Text.UTF8Encoding $false))
+            [void]$cmdRewriteFiles.Add($out)
         }
     }
-    if (-not $Check) { Write-Host "[sync] skills/ (<clone> -> absolute)" }
+    if (-not $Check) { Write-Host "[sync] skills/ (<clone> -> dest)" }
 }
 
-# --- 3. hooks.json (rewrite <clone>) ---
+# --- 3. hooks.json (rewrite <clone> -> dest) ---
 $hooksSrc = Join-Path $src 'hooks.json'
 $hooksDst = Join-Path $dest 'hooks.json'
 if (Test-Path $hooksSrc) {
@@ -195,9 +218,26 @@ if (Test-Path $hooksSrc) {
         Write-Host ("[check] hooks.json: {0}" -f $(if ($cur.Trim() -ne $body.Trim()) { 'would change' } else { 'in sync' }))
     } else {
         [System.IO.File]::WriteAllText($hooksDst, $body, (New-Object System.Text.UTF8Encoding $false))
-        Write-Host "[sync] hooks.json (<clone> -> absolute)"
+        [void]$cmdRewriteFiles.Add($hooksDst)
+        Write-Host "[sync] hooks.json (<clone> -> dest)"
     }
 }
+
+# Heal any leftover clone-root refs in written command files + agents.
+if (-not $Check) {
+    $agentsDst = Join-Path $dest 'agents'
+    if (Test-Path $agentsDst) {
+        Get-ChildItem $agentsDst -Filter *.md -File -ErrorAction SilentlyContinue | ForEach-Object {
+            [void]$cmdRewriteFiles.Add($_.FullName)
+        }
+    }
+    if ($cmdRewriteFiles.Count -gt 0) {
+        $rcArgs = @('rewrite-commands', '--dest', $dest, '--clone-root', $repo)
+        foreach ($cf in $cmdRewriteFiles) { $rcArgs += @('--file', $cf) }
+        Invoke-InstallRuntime $rcArgs
+    }
+}
+
 
 # --- 4. Lead: root AGENTS.md = SSOT (project-scoped if-absent); rule is short include, must not duplicate body ---
 if ($projectScoped -and (Test-Path $agentsMdSrc)) {

@@ -3,9 +3,9 @@
 #
 # Deploys the .claude layer (subagents + slash-commands + enforcement hooks) so Claude Code
 # sees them. Default target = user-global ~/.claude; --target <dir> stamps <dir>/.claude
-# (project-scoped) and copies root AGENTS.md if-absent (never overwrites). Tool/hook paths rewritten to absolute clone paths;
-# hooks are cwd-aware so one global copy serves every project. settings.json is MERGED
-# (hooks + permissions.deny spliced, existing keys preserved) via node (core/src/ops/merge-settings.ts).
+# (project-scoped) and copies root AGENTS.md if-absent (never overwrites). Tool/hook paths
+# rewritten to absolute paths inside <dest> after core is vendored; hooks are cwd-aware so
+# one global copy serves every project. settings.json is MERGED
 #
 # The enforcement PreToolUse hook is the TS command-hook shim (core/src/shim/command-hook.ts);
 # the L1-L3 rails (core/src/rails/cli.ts) are invoked by the copied slash-commands. Both run
@@ -132,7 +132,24 @@ command -v node >/dev/null 2>&1 || { echo "node not found on PATH - required to 
 echo "node:   $(node --version)"
 echo
 
+if command -v cygpath >/dev/null 2>&1; then
+  REPO_ABS="$(cygpath -m "$REPO")"
+  DEST_ABS="$(cygpath -m "$DEST")"
+else
+  REPO_ABS="$REPO"
+  DEST_ABS="$DEST"
+fi
+RUNTIME_TS="$REPO/tools/install-runtime.ts"
+invoke_install_runtime() {
+  node "$RUNTIME_TS" "$@" || { echo "install-runtime failed: $*" >&2; exit 1; }
+}
+
 [ $CHECK -eq 0 ] && mkdir -p "$DEST"
+if [ $CHECK -eq 1 ]; then
+  echo "[check] would vendor core/src -> $DEST_ABS/core/src"
+else
+  invoke_install_runtime vendor --repo "$REPO_ABS" --dest "$DEST_ABS"
+fi
 
 # --- 1. agents/: render canon fresh (A3 req 2 - never install from a committed port copy) ---
 RENDER_TMP="$(mktemp -d)"
@@ -178,21 +195,30 @@ if [ -d "$AGENTS_SRC" ]; then
 fi
 rm -rf "$RENDER_TMP"
 
-# --- 2. commands/ (rewrite `python tools/X.py` and `$CLAUDE_PROJECT_DIR/core/` -> absolute clone path) ---
+# --- 2. commands/ (rewrite core refs -> absolute path inside dest) ---
 if [ -d "$SRC/commands" ]; then
   [ $CHECK -eq 0 ] && mkdir -p "$DEST/commands"
+  CMD_FILES=()
   for f in "$SRC/commands"/*.md; do
     base="$(basename "$f")"
-    rewritten="$(sed -E "s|python tools/([^ ]+\.py)|python \"$REPO/tools/\1\"|g" "$f" | sed "s|\$CLAUDE_PROJECT_DIR/core/|$REPO/core/|g")"
+    rewritten="$(sed -E "s|python tools/([^ ]+\.py)|python \"$REPO_ABS/tools/\1\"|g" "$f" | sed "s|\$CLAUDE_PROJECT_DIR/core/|$DEST_ABS/core/|g")"
     out="$DEST/commands/$base"
     if [ $CHECK -eq 1 ]; then
       if [ -f "$out" ] && [ "$rewritten" = "$(cat "$out")" ]; then st="in sync"; else st="would change"; fi
       echo "[check] commands/$base: $st"
     else
       printf '%s' "$rewritten" > "$out"
+      CMD_FILES+=("$out")
     fi
   done
-  [ $CHECK -eq 0 ] && echo "[sync] commands/ (tool paths -> clone)"
+  if [ $CHECK -eq 0 ]; then
+    if [ "${#CMD_FILES[@]}" -gt 0 ]; then
+      rc_args=(rewrite-commands --dest "$DEST_ABS" --clone-root "$REPO_ABS")
+      for cf in "${CMD_FILES[@]}"; do rc_args+=(--file "$cf"); done
+      invoke_install_runtime "${rc_args[@]}"
+    fi
+    echo "[sync] commands/ (tool paths -> dest)"
+  fi
 fi
 
 # --- 3. settings.json MERGE (hooks + permissions.deny; preserve existing keys) via node ---
@@ -200,11 +226,14 @@ fi
 # entry instead of duplicating: "zone-guard" catches the old python hook, "command-hook"
 # catches a prior TS install; "telemetry" likewise for PostToolUse.)
 SET_DST="$DEST/settings.json"
-HOOK_CMD="node \"$REPO/core/src/shim/command-hook.ts\" claude"
-TEL="node \"$REPO/core/src/ops/telemetry-hook.ts\""
+HOOK_CMD="node \"$DEST_ABS/core/src/shim/command-hook.ts\" claude"
+TEL="node \"$DEST_ABS/core/src/ops/telemetry-hook.ts\""
 MERGE_ARGS=("$SET_DST" "$HOOK_CMD" "$TEL")
 [ $CHECK -eq 1 ] && MERGE_ARGS+=(--check)
 node "$REPO/core/src/ops/merge-settings.ts" "${MERGE_ARGS[@]}"
+if [ $CHECK -eq 0 ] && [ -f "$SET_DST" ]; then
+  invoke_install_runtime rewrite-commands --dest "$DEST_ABS" --file "$SET_DST" --clone-root "$REPO_ABS"
+fi
 
 # --- 4. AGENTS.md (project-scoped only; global skips to avoid ambient rules) ---
 if [ $SCOPED -eq 1 ] && [ -f "$REPO/AGENTS.md" ]; then

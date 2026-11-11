@@ -17,8 +17,9 @@
 | Domain roles collapse (phase 1) | Six `*-developer` removed from canon; default execute = `executor`; zonemap optional, not seeded (2026-11-09) |
 | Flow opt-in + contract-key | plan/scaffold default off; ck12 strip id/supersedes/stage + binds; judge stage MISROUTE parity (2026-11-09) |
 | Domain roles collapse (phase 2) | `ports/*/agents` regenerated via render (base five); domain md removed; drift asserts committed ports (2026-11-09) |
+| Bootstrap+docs (wave C, 2026-11-11) | Bootstrap = release zip+sha256 (not clone-root); shared head AIWF_CONFIG_HOME/XDG/~/.config/aiwf; legacy models.yml strip + modelRoles→OMP sync; all includes cursor+dsh; OpenCode rewrite-to-dest; update=re-bootstrap; uninstall keeps head |
 
-Pointers: `.workflow/ledger/b-track-status-2026-10-30.md`, `layout-agents-cleanup-2026-11-02.md`, `core-ports-finish-2026-11-06.md`.
+Pointers: `.workflow/ledger/b-track-status-2026-10-30.md`, `layout-agents-cleanup-2026-11-02.md`, `core-ports-finish-2026-11-06.md`, `wave-c-bootstrap-docs-2026-11-11.md`.
 
 ## Deferred forever
 

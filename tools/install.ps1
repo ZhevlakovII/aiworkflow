@@ -9,9 +9,9 @@
   non-role product code, copied verbatim) and `<repo>/canon` (role definitions +
   zonemap/delegation SKELETON, rendered/seeded, never copied verbatim — A3 req 2/3).
   Installer:
-    1) mirrors tools/ hooks/ (robocopy /MIR - removes stale files; copied .ts files
-       importing `(../)+core/src/...` (e.g. tools/_lib/*.ts) get that rewritten to
-       the absolute clone path since core/ itself is not copied - phase-b1.1);
+    1) mirrors tools/ hooks/ (robocopy /MIR - removes stale files); vendored
+       core/src lands at <dest>/core/src; TS imports of (../)+core/src/ are rewritten
+       file-relative into that dest tree via tools/install-runtime.ts (not clone abs);
     1b) agents/: renders `canon/roles` + `tools/adapters/omp.yml` into a fresh temp
        dir (`node core/src/render/cli.ts render --out <tmp> --clients omp`) and
        installs FROM THAT RENDER, never from a committed port copy (A3 req 2 — a
@@ -129,55 +129,74 @@ Write-Host "canon:  $canon"
 Write-Host "dest:   $dest  ($(if ($projectScoped){'project-scoped'}else{'global'}))"
 Write-Host ""
 
-# Rewrite copied .ts imports of `(../)+core/src/...` -> absolute clone `$repoFwd/core/src/...`
-# (precedent: tools/install-claude.ps1). core/ is not copied, so relative imports in the deployed
-# tools/_lib/*.ts would otherwise point into a void. Applied to a temp SHADOW copy of the source
-# tree before robocopy runs (both -Check and the real copy operate on the shadow), so drift-check
-# and the real copy always agree post-rewrite - no perpetual false drift (contract L-3).
-$coreRe  = '(\.\./)+core/src/'
-$coreAbs = ($repoFwd + '/core/src/')
-function New-RewrittenShadow($srcDir) {
-    $shadow = Join-Path $env:TEMP ("aiwf-install-" + [guid]::NewGuid().ToString("N"))
-    Copy-Item -Recurse -Force $srcDir $shadow
-    Get-ChildItem -Recurse -File -Filter *.ts -Path $shadow | ForEach-Object {
-        $content = Get-Content $_.FullName -Encoding UTF8 -Raw
-        if ($content -match $coreRe) {
-            # Preserve the ORIGINAL (pre-rewrite) LastWriteTime: WriteAllText below stamps "now",
-            # which would make robocopy's default size+time comparison flag this file as "changed"
-            # forever (both at real-install time and at every later -Check) even when the rewritten
-            # content is byte-identical to what's already installed - perpetual false drift
-            # (contract L-3). Restoring the source's own timestamp keeps it deterministic instead:
-            # same canon source -> same shadow timestamp -> matches the dest stamped the same way
-            # at install time.
-            $origTime = $_.LastWriteTimeUtc
-            $rewritten = [regex]::Replace($content, $coreRe, $coreAbs)
-            [System.IO.File]::WriteAllText($_.FullName, $rewritten, (New-Object System.Text.UTF8Encoding $false))
-            $_.LastWriteTimeUtc = $origTime
-        }
+# Vendor core/src into dest and rewrite file-relative imports via install-runtime
+# (ADR AD-runtime-per-dest-vendor + AD-rewrite-installed-location). Shadow is dest-shaped
+# so relative depth matches final layout; -Check compares rewritten shadow without writing.
+$runtimeTs = Join-Path $repo 'tools\install-runtime.ts'
+$destFwd = ($dest -replace '\\', '/')
+
+function Invoke-InstallRuntime {
+    param([Parameter(Mandatory = $true)][string[]]$RtArgs)
+    $out = & node $runtimeTs @RtArgs 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw ("install-runtime failed ({0}): {1}" -f $LASTEXITCODE, ($out | Out-String))
     }
-    return $shadow
+    foreach ($line in @($out)) {
+        if (("$line").Trim().Length -gt 0) { Write-Host $line }
+    }
 }
 
+function Invoke-AiwfVendor {
+    if ($Check) {
+        Write-Host ("[check] would vendor core/src -> {0}/core/src" -f $destFwd)
+    } else {
+        Invoke-InstallRuntime @('vendor', '--repo', $repo, '--dest', $dest)
+    }
+}
+
+# Copy $srcDir into a temp tree at <root>/<relUnder>/ then rewrite-imports with dest=root
+# so (../)+core/src depths match the real dest layout (tools/_lib -> ../../core/src/).
+function New-ImportRewrittenShadow([string]$srcDir, [string]$relUnder) {
+    $shadowRoot = Join-Path $env:TEMP ("aiwf-install-" + [guid]::NewGuid().ToString('N'))
+    $shadowSub = Join-Path $shadowRoot $relUnder
+    $parent = Split-Path -Parent $shadowSub
+    if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+    Copy-Item -Recurse -Force $srcDir $shadowSub
+    Invoke-InstallRuntime @('rewrite-imports', '--dest', $shadowRoot, '--under', $shadowSub)
+    return @{ Root = $shadowRoot; Sub = $shadowSub }
+}
+
+Invoke-AiwfVendor
+
 # --- 1. Mirror tools/hooks (agents are handled separately in 1b, from canon render) ---
-$trees = @("tools", "hooks")
+$trees = @('tools', 'hooks')
 foreach ($t in $trees) {
     $src = Join-Path $canon $t
     $dst = Join-Path $dest $t
     if (-not (Test-Path $src)) { continue }
-    $shadowSrc = New-RewrittenShadow $src
+    $shaped = New-ImportRewrittenShadow $src $t
     try {
         if ($Check) {
-            $changes = robocopy $shadowSrc $dst /MIR /L /NJH /NJS /NDL /NP /NC /NS
-            $n = ($changes | Where-Object { $_.Trim() -ne "" }).Count
+            $changes = robocopy $shaped.Sub $dst /MIR /L /NJH /NJS /NDL /NP /NC /NS
+            $n = ($changes | Where-Object { $_.Trim() -ne '' }).Count
             Write-Host ("[check] {0}: {1} file(s) would change" -f $t, $n)
         } else {
-            robocopy $shadowSrc $dst /MIR /NJH /NJS /NDL /NP /NC /NS | Out-Null
+            robocopy $shaped.Sub $dst /MIR /NJH /NJS /NDL /NP /NC /NS | Out-Null
             if ($LASTEXITCODE -ge 8) { throw "robocopy $t failed (exit $LASTEXITCODE)" }
             Write-Host ("[sync] {0}/ mirrored" -f $t)
         }
     } finally {
-        Remove-Item -Recurse -Force $shadowSrc -ErrorAction SilentlyContinue
+        Remove-Item -Recurse -Force $shaped.Root -ErrorAction SilentlyContinue
     }
+}
+# Real install: rewrite again on dest so a prior clone-abs install is healed even if MIR skips.
+if (-not $Check) {
+    $underArgs = @('rewrite-imports', '--dest', $dest)
+    foreach ($t in $trees) {
+        $p = Join-Path $dest $t
+        if (Test-Path $p) { $underArgs += @('--under', $p) }
+    }
+    if ($underArgs.Count -gt 3) { Invoke-InstallRuntime $underArgs }
 }
 
 # --- 1b. Agents: render canon fresh (A3 req 2 - never install from a committed port copy) ---

@@ -61,3 +61,42 @@ producer · critic · explorer · scaffolder · executor (пять базовы�
 **DSH P1 (2026-11-09):** `gated_merge`, `code_search`/`outline`/`callers` (ast-index), `hooks/dsh-telemetry.ts`, seed `delegation.yml`, `setup.sh -Flow all` → dsh.
 
 **DSH P2 (2026-11-09):** `plan`/`synthesize`/`archive_spec`, `hooks/queue-runner` (`DSH_QUEUE`/`AIWF_QUEUE`), `WATCHDOG.md`+`WATCHDOG.yml` (doc-only advisor), fan-out **unsupported** (`backend.ts` fail-closed).
+
+## Shared head + install lifecycle (2026-11-11)
+
+### Shared head path
+
+Resolve: `AIWF_CONFIG_HOME` → `$XDG_CONFIG_HOME/aiwf` → `~/.config/aiwf` (Windows: profile `.config/aiwf`, not %APPDATA%).
+Contents: `models.yml` (providers, maxSubagents) + `config.yml` **only** `modelRoles`.
+Theme stays in flavor OMP config. Product-block never copied into head.
+
+### Legacy migrate + modelRoles sync
+
+- If shared head absent and home agent has binding → one-shot import models.yml and/or modelRoles (no product-block).
+- After **successful** copy: **strip** legacy home-agent models.yml. Failed copy does not delete.
+- Do **not** strip modelRoles from OMP home `config.yml` as sole store.
+- **Sync shared → OMP** modelRoles on seed, import, every setup_roles write (product block preserved).
+- User edits shared head. OpenCode/DSH do not read the OMP mirror.
+- Project `.omp/models.yml` and `.dsh-aiwf/models.yml` beat shared list.
+
+### Bootstrap (not clone-root)
+
+bootstrap downloads `aiworkflow-install.zip` + neighbor sha256, verifies, extracts to temp cache,
+runs setup from cache, deletes cache **only on success**; on failure retains + prints path.
+Does not delete existing `~/.aiworkflow`. Dest is self-contained with vendored `<dest>/core/src`.
+
+### Flow membership
+
+`omp|claude|opencode|cursor|dsh|all|both`. Default `all` **includes cursor + dsh**. `both` excludes them.
+Harness CLI soft-optional on multi-flow (solo flow hard for that flow).
+
+### Path rewrite (all flavors incl OpenCode)
+
+OpenCode **does** rewrite core paths (stale INSTALL claim that it skips rewrite because `../lib` is relative is false).
+All flavors rewrite to **vendored dest**, not clone/cache.
+
+### Update / uninstall
+
+- **Update** = re-bootstrap latest/pin with sum verify; head preserved; project models seed-if-absent preserved; modelRoles still synced OMP from head.
+- **Uninstall** = installer flag: removes managed flavor trees incl vendored core + mirrored canon agents; may clear download cache;
+  does **not** remove shared head / OMP modelRoles mirror without explicit head purge; does **not** delete `~/.aiworkflow` or user project seed-if-absent without purge.

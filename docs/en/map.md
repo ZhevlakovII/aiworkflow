@@ -16,6 +16,12 @@ Installers copy `ports/<client>/` → consumer `.<client>/` (project) or the fla
 
 Project overlays (optional filled `zonemap.yml` / `delegation.yml`, custom agents) belong in the **consumer** project, not in canon. Installers do **not** seed empty zonemap; missing file is normal → executor.
 
+
+## Shared head + runtime dest
+
+- Shared head (models/modelRoles): `AIWF_CONFIG_HOME` → `$XDG_CONFIG_HOME/aiwf` → `~/.config/aiwf`.
+- Install dest (each flavor) vendors `core/src` at `<dest>/core/src`; bootstrap cache and `~/.aiworkflow` are not runtime roots.
+- Default flow `all` includes cursor + dsh (same as setup).
 ## Macro path
 
 Default: `classify → design? → execute → gate → report`. Full stage catalog (7) and plan/scaffold opt-in — `docs/en/keys.md`.

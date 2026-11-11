@@ -1,15 +1,14 @@
-// setup_roles — интерактивная привязка ролей OMP (modelRoles) к моделям из models.yml (task-2).
-// Кросс-платформенно (node, вызывается из setup.ps1/setup.sh). Источник моделей = РЕАЛЬНЫЙ models.yml
-// (не хардкод-Qwen шаблона). Пишет modelRoles в head config.yml, preserve всё прочее (theme/product).
+// setup_roles — bind modelRoles to models from shared head models.yml (neutral head B).
+// Cross-platform (node; called from setup.ps1/setup.sh). Writes modelRoles to shared head
+// config.yml, then syncs modelRoles into home agent dir config.yml for OMP @role.
 //
-// Режимы:
-//   (default)   интерактив: по каждой роли выбрать модель из списка / keep / unset.
-//   --defaults  без промптов: незарезолвнутые роли → дефолт-модель (первая в models.yml или --model X).
-//   --check     только отчёт о нерезолвнутых ролях, НИЧЕГО не пишет (для setup -Check). exit 0.
-//   --model X   дефолт-модель для --defaults / стартовое предложение в интерактиве.
-//   --config P / --models P — переопределить пути (тест/нестандарт).
+// Modes:
+//   (default)   interactive: pick model per role / keep / unset.
+//   --defaults  no prompts: unresolved roles -> default model (first in models.yml or --model X).
+//   --check     report only, writes nothing (setup -Check). exit 0.
+//   --model X   default model for --defaults / interactive suggestion.
+//   --config P / --models P — override paths (test/nonstandard).
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import * as readline from "node:readline/promises";
 import { stdin, stdout } from "node:process";
@@ -17,6 +16,10 @@ import {
   ROLES, parseModelRoles, listModels, modelResolves, unresolvedRoles, writeModelRoles,
   type ModelRef,
 } from "../ports/omp/tools/_lib/modelroles.ts";
+import {
+  resolveAiwfHeadDir, resolveHomeAgentDir, headConfigPath, headModelsPath,
+  writeSyncModelRolesToOmp,
+} from "../ports/omp/tools/_lib/aiwf_head.ts";
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(name);
@@ -24,9 +27,9 @@ function arg(name: string): string | undefined {
 }
 const has = (name: string) => process.argv.includes(name);
 
-const home = os.homedir();
-const configPath = arg("--config") || path.join(home, ".omp", "agent", "config.yml");
-const modelsPath = arg("--models") || path.join(home, ".omp", "agent", "models.yml");
+const headDir = resolveAiwfHeadDir();
+const configPath = arg("--config") || headConfigPath(headDir);
+const modelsPath = arg("--models") || headModelsPath(headDir);
 const wantCheck = has("--check");
 const wantDefaults = has("--defaults");
 const defModelArg = arg("--model");
@@ -35,12 +38,19 @@ function readOr(p: string): string { try { return fs.existsSync(p) ? fs.readFile
 
 function reportIssues(roles: Record<string, string>, models: ModelRef[]): number {
   const issues = unresolvedRoles(roles, models);
-  if (!issues.length) { console.log("  [ok] modelRoles: все роли резолвятся в models.yml."); return 0; }
+  if (!issues.length) { console.log("  [ok] modelRoles: all roles resolve in models.yml."); return 0; }
   for (const i of issues) {
-    if (i.reason === "unset") console.log(`  [warn] роль '${i.role}': МОДЕЛЬ НЕ ЗАДАНА (omp упадёт при её вызове).`);
-    else console.log(`  [warn] роль '${i.role}': модель '${i.model}' НЕ найдена в models.yml.`);
+    if (i.reason === "unset") console.log("  [warn] role " + JSON.stringify(i.role) + ": MODEL UNSET.");
+    else console.log("  [warn] role " + JSON.stringify(i.role) + ": model " + JSON.stringify(i.model) + " NOT in models.yml.");
   }
   return issues.length;
+}
+
+function persistRoles(configText: string, next: Record<string, string>): void {
+  const dir = path.dirname(configPath);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(configPath, writeModelRoles(configText, next), "utf8");
+  writeSyncModelRolesToOmp(headDir, resolveHomeAgentDir());
 }
 
 async function main(): Promise<number> {
@@ -48,33 +58,30 @@ async function main(): Promise<number> {
   const configText = readOr(configPath);
   const current = parseModelRoles(configText);
 
-  console.log(`--- modelRoles bind (config: ${configPath}) ---`);
+  console.log("--- modelRoles bind (config: " + configPath + ") ---");
   if (!models.length) {
-    console.log(`  [warn] в ${modelsPath} нет моделей — заполни его и перезапусти. Пропускаю привязку.`);
+    console.log("  [warn] no models in " + modelsPath + " — fill it and re-run. Skipping bind.");
     return 0;
   }
   const defModel = defModelArg && modelResolves(models, defModelArg) ? defModelArg : models[0].full;
 
-  // --check: только отчёт.
   if (wantCheck) { reportIssues(current, models); return 0; }
 
   const interactive = !wantDefaults && stdin.isTTY && stdout.isTTY;
-  const bound: Record<string, string> = { ...current };
+  const next: Record<string, string> = { ...current };
 
   if (!interactive) {
-    // --defaults / не-TTY: незарезолвнутые роли → дефолт-модель; резолвнутые оставляем.
-    if (!wantDefaults) console.log("  [note] не-интерактивный stdin → привязываю дефолты (--defaults-режим).");
-    for (const r of ROLES) if (!modelResolves(models, bound[r] || "")) bound[r] = defModel;
-    fs.writeFileSync(configPath, writeModelRoles(configText, bound), "utf8");
-    console.log(`  [seed] незаданные роли → ${defModel}`);
-    reportIssues(bound, models);
+    if (!wantDefaults) console.log("  [note] non-interactive stdin -> defaults mode.");
+    for (const r of ROLES) if (!modelResolves(models, next[r] || "")) next[r] = defModel;
+    persistRoles(configText, next);
+    console.log("  [seed] unset roles -> " + defModel);
+    reportIssues(next, models);
     return 0;
   }
 
-  // Интерактив.
-  console.log("Доступные модели из models.yml:");
-  models.forEach((m, i) => console.log(`  ${i + 1}) ${m.full}`));
-  console.log("Для каждой роли: номер модели | Enter = оставить текущее | u = снять (роль без модели).\n");
+  console.log("Models from models.yml:");
+  models.forEach((m, i) => console.log("  " + (i + 1) + ") " + m.full));
+  console.log("Per role: model number | Enter = keep | u = unset." + String.fromCharCode(10));
 
   const rl = readline.createInterface({ input: stdin, output: stdout });
   try {
@@ -82,21 +89,22 @@ async function main(): Promise<number> {
       const cur = (current[r] || "").trim();
       const curOk = modelResolves(models, cur);
       const suggestion = curOk ? cur : defModel;
-      const label = cur ? (curOk ? cur : `${cur} (НЕ в models.yml)`) : "(не задано)";
-      const ans = (await rl.question(`  ${r} [текущее: ${label}] → предложение ${suggestion}: `)).trim();
-      if (ans === "") { bound[r] = curOk ? cur : suggestion; }          // Enter — оставить/принять предложение
-      else if (ans.toLowerCase() === "u") { bound[r] = ""; }            // снять
+      const label = cur ? (curOk ? cur : cur + " (NOT in models.yml)") : "(unset)";
+      const ans = (await rl.question("  " + r + " [current: " + label + "] -> suggest " + suggestion + ": ")).trim();
+      if (ans === "") { next[r] = curOk ? cur : suggestion; }
+      else if (ans.toLowerCase() === "u") { next[r] = ""; }
       else {
         const n = parseInt(ans, 10);
-        if (Number.isInteger(n) && n >= 1 && n <= models.length) bound[r] = models[n - 1].full;
-        else { console.log(`    ? не понял '${ans}' — оставляю ${suggestion}`); bound[r] = suggestion; }
+        if (Number.isInteger(n) && n >= 1 && n <= models.length) next[r] = models[n - 1].full;
+        else { console.log("    ? unknown " + JSON.stringify(ans) + " — keeping " + suggestion); next[r] = suggestion; }
       }
     }
   } finally { rl.close(); }
 
-  fs.writeFileSync(configPath, writeModelRoles(configText, bound), "utf8");
-  console.log(`\n  [written] modelRoles → ${configPath}`);
-  reportIssues(bound, models);
+  persistRoles(configText, next);
+  console.log(String.fromCharCode(10) + "  [written] modelRoles -> " + configPath);
+  console.log("  [sync] modelRoles -> home agent config.yml");
+  reportIssues(next, models);
   return 0;
 }
 

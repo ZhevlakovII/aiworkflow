@@ -8,8 +8,8 @@
 #
 # TS tools use PATH binaries (git/gh/claude/opencode/codex/ast-index) at run time -> no rewrite
 # needed for those. BUT `.opencode/lib/*.ts` re-export from `core/src/...` via relative imports
-# (`../../core/src/...`), and core/ itself is NOT copied here -> those get rewritten to the
-# absolute clone path on copy (same precedent as tools/install-claude.sh; phase-b1.1). opencode.json
+# (`(../)+core/src/...`). Install vendors core/src into <dest>/core/src and rewrites those
+# imports file-relative via tools/install-runtime.ts (not absolute clone). opencode.json
 # is MERGED (permission + instructions spliced, existing user keys preserved) via python.
 #
 # agents/*.md are NOT copied verbatim from `ports/opencode/agents` (A3 req 2):
@@ -50,10 +50,7 @@ ADAPTERS_ROOT="$REPO/tools/adapters"
 [ -d "$SRC" ] || { echo "ports/opencode not found: $SRC" >&2; exit 1; }
 [ -f "$SRC_JSON" ] || { echo "ports/opencode/opencode.json not found: $SRC_JSON" >&2; exit 1; }
 
-# REPO_ABS: absolute clone path used to rewrite copied .ts imports (see rewrite_core_imports_tree
-# below). On Windows git-bash $REPO is MSYS-style (/c/Users/...) - fine for bash file ops, but the
-# rewritten import string must be a real Windows path (C:/Users/..., forward slashes - Bun accepts
-# it); cygpath -m gives exactly that. Elsewhere (linux/macos) cygpath is absent -> REPO_ABS = REPO.
+# DEST_ABS / REPO_ABS for install-runtime (cygpath on git-bash when present).
 if command -v cygpath >/dev/null 2>&1; then
   REPO_ABS="$(cygpath -m "$REPO")"
 else
@@ -147,39 +144,45 @@ echo
 
 [ $CHECK -eq 0 ] && mkdir -p "$DEST"
 
-# --- 1. mirror .opencode tree (OVERLAY: copy our files, never delete the whole dir) ---
-# Subtrees clearly ours -> full sync (delete stale inside them); agents/ is rendered fresh
-# from canon (A3 req 2, see render_agents_overlay below), not mirrored from a committed copy.
-OURS_DIRS="tools plugins lib commands"     # our namespaces (safe to delete stale within)
-TOP_FILES="AGENTS.md"                        # zonemap.yml/delegation.yml are project-scoped-only seeds (below)
+if command -v cygpath >/dev/null 2>&1; then
+  DEST_ABS="$(cygpath -m "$DEST")"
+else
+  DEST_ABS="$DEST"
+fi
+RUNTIME_TS="$REPO/tools/install-runtime.ts"
 
-# Rewrite copied .ts imports of `(../)+core/src/...` -> absolute clone `$REPO_ABS/core/src/...`
-# (precedent: tools/install-claude.sh). core/ is not copied, so relative imports in the deployed
-# .opencode/lib/*.ts would otherwise point into a void. Applied to a temp SHADOW of the source
-# subtree before copying, so --check (diffed against the shadow) and the real copy always agree
-# post-rewrite - no perpetual false drift (contract L-3).
-CORE_RE='(\.\./)+core/src/'
-CORE_ABS="$REPO_ABS/core/src/"
-rewrite_core_imports_tree() { # $1 = dir; rewrite *.ts matching CORE_RE in place
-  local d="$1" f rewritten origEpoch
-  [ -d "$d" ] || return 0
-  while IFS= read -r -d '' f; do
-    if grep -qE "$CORE_RE" "$f" 2>/dev/null; then
-      # Preserve the ORIGINAL (pre-rewrite) mtime (see install.sh for the mtime-diff-tool rationale;
-      # this script's own --check uses content diff, not mtime, but keep behaviour consistent/robust).
-      origEpoch="$(stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null || true)"
-      rewritten="$(sed -E "s#$CORE_RE#$CORE_ABS#g" "$f")"
-      printf '%s\n' "$rewritten" > "$f"
-      [ -n "$origEpoch" ] && touch -d "@$origEpoch" "$f" 2>/dev/null
-    fi
-  done < <(find "$d" -name '*.ts' -print0)
+invoke_install_runtime() {
+  node "$RUNTIME_TS" "$@" || { echo "install-runtime failed: $*" >&2; exit 1; }
 }
 
-sync_dir_full() { # $1 = subdir; mirror with stale-delete inside our namespace
-  local sub="$1" s="$SRC/$1" d="$DEST/$1"
+invoke_aiwf_vendor() {
+  if [ "$CHECK" -eq 1 ]; then
+    echo "[check] would vendor core/src -> $DEST_ABS/core/src"
+  else
+    invoke_install_runtime vendor --repo "$REPO_ABS" --dest "$DEST_ABS"
+  fi
+}
+
+new_import_rewritten_shadow() {
+  local srcDir="$1" relUnder="$2" shadowRoot shadowSub parent
+  shadowRoot="$(mktemp -d)"
+  shadowSub="$shadowRoot/$relUnder"
+  parent="$(dirname "$shadowSub")"
+  mkdir -p "$parent"
+  cp -Rp "$srcDir/." "$shadowSub/"
+  invoke_install_runtime rewrite-imports --dest "$shadowRoot" --under "$shadowSub"
+  printf '%s' "$shadowRoot"
+}
+
+# --- 1. mirror .opencode tree (OVERLAY: copy our files, never delete the whole dir) ---
+OURS_DIRS="tools plugins lib commands"
+TOP_FILES="AGENTS.md"
+
+sync_dir_full() {
+  local sub="$1" s="$SRC/$1" d="$DEST/$1" shaped_root shadow
   [ -d "$s" ] || return 0
-  local shadow; shadow="$(mktemp -d)"
-  cp -Rp "$s/." "$shadow/"; rewrite_core_imports_tree "$shadow"
+  shaped_root="$(new_import_rewritten_shadow "$s" "$sub")"
+  shadow="$shaped_root/$sub"
   if [ $CHECK -eq 1 ]; then
     local n
     if [ ! -d "$d" ]; then n=$(find "$shadow" -type f | wc -l | tr -d ' ')
@@ -189,14 +192,10 @@ sync_dir_full() { # $1 = subdir; mirror with stale-delete inside our namespace
     rm -rf "$d"; mkdir -p "$d"; cp -R "$shadow/." "$d/"
     echo "[sync] $sub/ mirrored"
   fi
-  rm -rf "$shadow"
+  rm -rf "$shaped_root"
 }
 
-# render_agents_overlay: A3 req 2 - agents/*.md come from a fresh canon render
-# (`node core/src/render/cli.ts render --out <tmp> --clients opencode`), never from
-# ports/opencode/agents - a broken/missing node aborts the installer.
-# OVERLAY semantics preserved (never delete a user's/project's own extra agents/*.md);
-# --keep-agents freezes any file already present at dest (A3 req 4).
+# render_agents_overlay: A3 req 2 - agents/*.md from fresh canon render.
 render_agents_overlay() {
   command -v node >/dev/null 2>&1 || { echo "node not found on PATH - required to render canon agents (core/src/render/cli.ts)" >&2; exit 1; }
   local renderTmp; renderTmp="$(mktemp -d)"
@@ -231,8 +230,41 @@ render_agents_overlay() {
   rm -rf "$renderTmp"
 }
 
+# Port-static oneshot agents after live render (AD-opencode-native-oneshot).
+stamp_oneshot_agents() {
+  local d="$DEST/agents" name s out chg=0
+  for name in aiwf-oneshot.md aiwf-reason.md; do
+    s="$SRC/agents/$name"
+    [ -f "$s" ] || continue
+    out="$d/$name"
+    if [ -f "$out" ] && [ "$KEEP_AGENTS" -eq 1 ]; then
+      same_agent_content "$s" "$out" || KEPT_AGENT_OVERLAY_NAMES+=("$name")
+      continue
+    fi
+    if [ $CHECK -eq 1 ]; then
+      if [ -f "$out" ] && cmp -s "$s" "$out"; then :; else chg=$((chg+1)); fi
+    else
+      mkdir -p "$d"
+      cp -f "$s" "$out"
+    fi
+  done
+  if [ $CHECK -eq 1 ]; then echo "[check] agents/ (oneshot static): $chg file(s) would change"
+  else echo "[sync] agents/ oneshot static (aiwf-oneshot, aiwf-reason)"; fi
+}
+
+invoke_aiwf_vendor
 for sub in $OURS_DIRS; do sync_dir_full "$sub"; done
+if [ "$CHECK" -eq 0 ]; then
+  ri_args=(rewrite-imports --dest "$DEST_ABS")
+  for sub in $OURS_DIRS; do
+    [ -d "$DEST/$sub" ] && ri_args+=(--under "$DEST_ABS/$sub")
+  done
+  if [ "${#ri_args[@]}" -gt 3 ]; then
+    invoke_install_runtime "${ri_args[@]}"
+  fi
+fi
 render_agents_overlay
+stamp_oneshot_agents
 
 # top-level files (AGENTS.md; zonemap/delegation are project-scoped-only seeds, below)
 for f in $TOP_FILES; do

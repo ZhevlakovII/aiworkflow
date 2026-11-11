@@ -32,37 +32,49 @@ $pluginDest = Join-Path $profileDir 'plugins\aiwf'
 $patchDst = Join-Path $profileDir 'cordis.patch.yml'
 $overlay = if ($Target) { Join-Path $Target '.dsh-aiwf' } else { '' }
 
-$coreRe = '(\.\./)+core/src/'
-$coreAbs = "$repoFwd/core/src/"
+$runtimeTs = Join-Path $repo 'tools\install-runtime.ts'
+$destFwd = ($pluginDest -replace '\\', '/')
+
+function Invoke-InstallRuntime {
+  param([Parameter(Mandatory = $true)][string[]]$RtArgs)
+  $out = & node $runtimeTs @RtArgs 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    throw ("install-runtime failed ({0}): {1}" -f $LASTEXITCODE, ($out | Out-String))
+  }
+  foreach ($line in @($out)) {
+    if (("$line").Trim().Length -gt 0) { Write-Host $line }
+  }
+}
 
 Write-Host "flavor: dsh"
 Write-Host "plugin:  $pluginDest"
 Write-Host "patch:   $patchDst"
 Write-Host "overlay: $(if ($overlay) { $overlay } else { '<none>' })"
 
-function Rewrite-CoreImports([string]$dir) {
-  Get-ChildItem -Path $dir -Filter '*.ts' -Recurse -File | ForEach-Object {
-    $text = [System.IO.File]::ReadAllText($_.FullName)
-    if ($text -match '\.\./.*core/src/') {
-      $new = [regex]::Replace($text, $coreRe, $coreAbs)
-      if (-not $Check) { [System.IO.File]::WriteAllText($_.FullName, $new) }
-    }
-  }
+function New-ImportRewrittenShadow([string]$srcDir) {
+  $shadowRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("aiwf-dsh-" + [guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Force -Path $shadowRoot | Out-Null
+  Copy-Item -Path (Join-Path $srcDir '*') -Destination $shadowRoot -Recurse -Force
+  Invoke-InstallRuntime @('rewrite-imports', '--dest', $shadowRoot, '--under', $shadowRoot)
+  return $shadowRoot
 }
 
 function Sync-Plugin {
-  $shadow = Join-Path ([System.IO.Path]::GetTempPath()) ("aiwf-dsh-" + [guid]::NewGuid().ToString())
-  New-Item -ItemType Directory -Force -Path $shadow | Out-Null
-  Copy-Item -Path (Join-Path $src '*') -Destination $shadow -Recurse -Force
-  Rewrite-CoreImports $shadow
-  if ($Check) {
-    Write-Host "[check] plugin -> $pluginDest"
-  } else {
-    New-Item -ItemType Directory -Force -Path $pluginDest | Out-Null
-    Copy-Item -Path (Join-Path $shadow '*') -Destination $pluginDest -Recurse -Force
-    Write-Host "[sync] plugin -> $pluginDest"
+  $shadow = New-ImportRewrittenShadow $src
+  try {
+    if ($Check) {
+      Write-Host "[check] would vendor core/src -> $pluginDest/core/src"
+      Write-Host "[check] plugin -> $pluginDest"
+    } else {
+      New-Item -ItemType Directory -Force -Path $pluginDest | Out-Null
+      Invoke-InstallRuntime @('vendor', '--repo', $repo, '--dest', $pluginDest)
+      Copy-Item -Path (Join-Path $shadow '*') -Destination $pluginDest -Recurse -Force
+      Invoke-InstallRuntime @('rewrite-imports', '--dest', $pluginDest, '--under', $pluginDest)
+      Write-Host "[sync] plugin -> $pluginDest"
+    }
+  } finally {
+    Remove-Item -Recurse -Force $shadow -ErrorAction SilentlyContinue
   }
-  Remove-Item -Recurse -Force $shadow
 }
 
 function Merge-Patch {

@@ -3,8 +3,8 @@
 # Wraps install.ps1 (canon copy + product-block splice) with four extra steps:
 #   1) prereq detection (OMP/Node/git/ast-index; opt Claude/Java/codex) + INTERACTIVE install via
 #      the platform package manager (winget or scoop; npm for codex);
-#   2) machine-head bootstrap - seed ~/.omp/agent/{models.yml, config.yml modelRoles} from tools/templates/
-#      ONLY when absent (never overwrite a real machine-head);
+#   2) shared-head bootstrap - seed ~/.config/aiwf (any omp|opencode|dsh flow) from tools/templates/
+#      ONLY when absent (never overwrite a real shared head); migrate legacy once;
 #   2b) modelRoles bind - interactively pick a model per role from the REAL models.yml, validate,
 #       notify on unset/unknown roles (setup_roles.ts). -DefaultRoles = non-interactive defaults;
 #   3) install.ps1 - deploy product (preserves machine-head);
@@ -54,6 +54,7 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Repo      = Split-Path -Parent $ScriptDir
 $Canon     = Join-Path $Repo 'ports\omp'
 $Global    = Join-Path $HOME '.omp/agent'
+$SharedHead = if ($env:AIWF_CONFIG_HOME) { $env:AIWF_CONFIG_HOME } elseif ($env:XDG_CONFIG_HOME) { Join-Path $env:XDG_CONFIG_HOME 'aiwf' } else { Join-Path $HOME '.config/aiwf' }
 $Templates = Join-Path $ScriptDir 'templates'
 
 function Probe([string]$cmd, [string[]]$verArgs) {
@@ -97,14 +98,14 @@ function PkgFor([string]$cmd) {
 Write-Host "=== AI Workflow setup ===" -ForegroundColor Cyan
 Write-Host "flow:   $Flow  (omp=$doOmp claude=$doClaude opencode=$doOpencode cursor=$doCursor dsh=$doDsh)" -ForegroundColor Cyan
 Write-Host "canon:  $Canon"
-Write-Host "global: $Global`n"
+Write-Host "shared-head: $SharedHead  (legacy agent: $Global)`n"
 
 # --- 1. Prereqs ---
 # Harness CLIs (omp/claude/opencode/dsh) are soft/optional: still probe + offer install recipes,
 # but NEVER enter missingRequired solely because the flow flag selected them. After the loop,
 # soft-disable selected flavors whose CLI is still absent. git/ast-index stay hard-required.
 # Node becomes required when any remaining selected flavor needs render/install (via node).
-# T7-6 (contract L-3): python prereq removed — the rails/drivers were all ported to node
+# T7-6 (contract L-3): python prereq removed - the rails/drivers were all ported to node
 # (core/src/**), no tools/*.py left, nothing here shells out to python anymore.
 $claudeHint = 'https://claude.ai/code (not npm; ToS-safe worker) - optional; skipped if absent'
 $prereqs = @(
@@ -227,66 +228,39 @@ if (-not $Check) {
     }
 }
 
-if ($doOmp) {
-# --- 2. Machine-head bootstrap (seed ONLY when absent; never touch a real head) ---
-$modelsDst = Join-Path $Global 'models.yml'
-$cfgDst    = Join-Path $Global 'config.yml'
-$modelsTpl = Join-Path $Templates 'models.yml.example'
-$headTpl   = Join-Path $Templates 'machine-head.yml.example'
-
-function HasModelRoles([string]$cfg) {
-    if (-not (Test-Path $cfg)) { return $false }
-    $marker = '# ===== AIWORKFLOW PRODUCT'
-    foreach ($line in Get-Content $cfg -Encoding UTF8) {
-        if ($line -like "$marker*") { break }        # head = everything above MARKER
-        if ($line -match '^\s*modelRoles\s*:') { return $true }
-    }
-    return $false
-}
-
-$seedModels = -not (Test-Path $modelsDst)
-$seedHead   = -not (HasModelRoles $cfgDst)
-
-Write-Host "--- machine-head ---" -ForegroundColor Cyan
-if ($Check) {
-    if ($seedModels) { Write-Host "  models.yml: ABSENT   -> would seed from template" } else { Write-Host "  models.yml: present  -> keep" }
-    if ($seedHead)   { Write-Host "  modelRoles: ABSENT   -> would seed from template" } else { Write-Host "  modelRoles: present  -> keep" }
-    Write-Host ""
+# --- 2. Shared head (neutral): any resolving flow (omp|opencode|dsh), not only doOmp ---
+# Claude/cursor-only skip seed. Seed-if-absent + legacy import-once + modelRoles sync to OMP.
+$needHead = $doOmp -or $doOpencode -or $doDsh
+if ($needHead) {
+$headCli = Join-Path $ScriptDir 'aiwf_head_cli.ts'
+Write-Host "--- shared-head ---" -ForegroundColor Cyan
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    Write-Host "  [skip] node absent - cannot ensure shared head." -ForegroundColor DarkGray
+} elseif ($Check) {
+    & node $headCli ensure --check --templates $Templates
 } else {
-    if (-not (Test-Path $Global)) { New-Item -ItemType Directory -Force -Path $Global | Out-Null }
-    if ($seedModels) {
-        Copy-Item $modelsTpl $modelsDst
-        Write-Host "  [seed] models.yml <- template (EDIT endpoint/model for your machine!)" -ForegroundColor Yellow
-    } else { Write-Host "  [keep] models.yml present - untouched" -ForegroundColor DarkGray }
-
-    if ($seedHead) {
-        $tpl = Get-Content $headTpl -Encoding UTF8 -Raw
-        if (Test-Path $cfgDst) {
-            $existing = Get-Content $cfgDst -Encoding UTF8 -Raw
-            Set-Content -Path $cfgDst -Value ($tpl.TrimEnd() + "`n" + $existing) -Encoding UTF8 -NoNewline
-        } else {
-            Set-Content -Path $cfgDst -Value $tpl -Encoding UTF8 -NoNewline
-        }
-        Write-Host "  [seed] config.yml modelRoles <- template (composer/4.7 matrix)" -ForegroundColor Yellow
-    } else { Write-Host "  [keep] modelRoles present - untouched" -ForegroundColor DarkGray }
-    Write-Host ""
+    & node $headCli ensure --templates $Templates
+    if ($LASTEXITCODE -ne 0) { Write-Host ("shared head ensure failed (exit " + $LASTEXITCODE + ")") -ForegroundColor Red; exit $LASTEXITCODE }
 }
+Write-Host ""
 
-# --- 2b. modelRoles bind: pick per-role model from models.yml (interactive) + validate ---
+# --- 2b. modelRoles bind against shared head ---
 $rolesTool = Join-Path $ScriptDir 'setup_roles.ts'
 Write-Host "--- modelRoles ---" -ForegroundColor Cyan
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     Write-Host "  [skip] node absent - cannot bind/validate modelRoles." -ForegroundColor DarkGray
 } elseif ($Check) {
-    & node $rolesTool --check --config $cfgDst --models $modelsDst   # report only, writes nothing
+    & node $rolesTool --check
 } elseif ($DefaultRoles) {
-    & node $rolesTool --defaults --config $cfgDst --models $modelsDst # non-interactive: defaults from models.yml
+    & node $rolesTool --defaults
 } else {
-    & node $rolesTool --config $cfgDst --models $modelsDst           # interactive per-role pick
+    & node $rolesTool
 }
 Write-Host ""
+}
 
-# --- 3. install.ps1 (deploy product; preserves machine-head; -Target -> project-scoped OMP too, A3 req 5) ---
+if ($doOmp) {
+# --- 3. install.ps1 (deploy product; head already ensured above) ---
 $installer = Join-Path $ScriptDir 'install.ps1'
 Write-Host "--- install.ps1 ---" -ForegroundColor Cyan
 $ompArgs = @()
@@ -294,7 +268,7 @@ if ($Check)      { $ompArgs += '-Check' }
 if ($Target)     { $ompArgs += '-Target'; $ompArgs += $Target }
 if ($KeepAgents) { $ompArgs += '-KeepAgents' }
 & powershell -ExecutionPolicy Bypass -File $installer @ompArgs
-if ($LASTEXITCODE -ne 0) { Write-Host "install.ps1 failed (exit $LASTEXITCODE)" -ForegroundColor Red; exit $LASTEXITCODE }
+if ($LASTEXITCODE -ne 0) { Write-Host "install.ps1 failed" -ForegroundColor Red; exit $LASTEXITCODE }
 Write-Host ""
 
 # --- 4. Load-smoke (omp) ---
@@ -309,16 +283,17 @@ if (-not $Check -and -not $SkipSmoke) {
             if ($LASTEXITCODE -eq 0) {
                 Write-Host "  [ok] omp loaded config+customTools+hooks (exit 0)." -ForegroundColor Green
             } else {
-                Write-Host "  [warn] omp smoke exit ${LASTEXITCODE}:" -ForegroundColor Yellow
-                Write-Host ("$smoke" | Select-Object -First 20)
+                Write-Host ("  [warn] omp smoke exit " + $LASTEXITCODE) -ForegroundColor Yellow
+                Write-Host ($smoke | Select-Object -First 20)
             }
         } catch {
-            Write-Host "  [warn] smoke did not run: $_" -ForegroundColor Yellow
+            Write-Host ("  [warn] smoke did not run: " + $_) -ForegroundColor Yellow
         }
     }
     Write-Host ""
 }
 }  # end if ($doOmp)
+
 
 # --- 5. Claude Code flavor (agents + commands + hooks + settings) ---
 if ($doClaude) {

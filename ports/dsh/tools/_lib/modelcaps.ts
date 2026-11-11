@@ -10,10 +10,17 @@ export interface ModelCaps {
   byId: Record<string, number>;
 }
 
+function resolveAiwfHeadDir(): string {
+  const forced = (process.env.AIWF_CONFIG_HOME || "").trim();
+  if (forced) return path.resolve(forced);
+  const xdg = (process.env.XDG_CONFIG_HOME || "").trim();
+  if (xdg) return path.resolve(xdg, "aiwf");
+  return path.join(os.homedir(), ".config", "aiwf");
+}
 function modelsFiles(cwd: string): string[] {
   return [
     path.resolve(cwd, ".dsh-aiwf/models.yml"),
-    path.join(os.homedir(), ".dsh", "agent", "models.yml"),
+    path.join(resolveAiwfHeadDir(), "models.yml"),
   ];
 }
 

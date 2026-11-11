@@ -9,10 +9,10 @@
   Default target = user-global ~/.claude (available in every project). -Target <dir>
   stamps into <dir>/.claude instead (project-scoped) and also copies root AGENTS.md
   (if-absent; never overwrites).
-
-  Tool/hook paths are rewritten to ABSOLUTE clone paths (<repo>/tools, <repo>/core) so
-  commands/hooks work from any project cwd. Hooks are cwd-aware (read target project
-  root from the hook stdin), so a single global copy serves every project.
+  Tool/hook paths are rewritten to ABSOLUTE paths inside <dest> (<dest>/core/...) so
+  commands/hooks work from any project cwd after core is vendored into dest. Hooks are
+  cwd-aware (read target project root from the hook stdin), so a single global copy
+  serves every project.
 
   The enforcement PreToolUse hook is the TS command-hook shim
   (core/src/shim/command-hook.ts); the L1-L3 rails (core/src/rails/cli.ts) are invoked
@@ -123,7 +123,27 @@ if (-not $nodeVersion) {
 }
 Write-Host ""
 
+$runtimeTs = Join-Path $repo 'tools\install-runtime.ts'
+$destFwd = ($dest -replace '\\', '/')
+
+function Invoke-InstallRuntime {
+    param([Parameter(Mandatory = $true)][string[]]$RtArgs)
+    $out = & node $runtimeTs @RtArgs 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw ("install-runtime failed ({0}): {1}" -f $LASTEXITCODE, ($out | Out-String))
+    }
+    foreach ($line in @($out)) {
+        if (("$line").Trim().Length -gt 0) { Write-Host $line }
+    }
+}
+
 if (-not $Check) { New-Item -ItemType Directory -Force -Path $dest | Out-Null }
+if ($Check) {
+    Write-Host ("[check] would vendor core/src -> {0}/core/src" -f $destFwd)
+} else {
+    Invoke-InstallRuntime @('vendor', '--repo', $repo, '--dest', $dest)
+}
+
 
 # --- 1. agents/: render canon fresh (A3 req 2 - never install from a committed port copy) ---
 $renderTmp = Join-Path $env:TEMP ("aiwf-render-claude-" + [guid]::NewGuid().ToString("N"))
@@ -173,30 +193,41 @@ try {
     Remove-Item -Recurse -Force $renderTmp -ErrorAction SilentlyContinue
 }
 
-# --- 2. commands/ (rewrite `python tools/X.py` and `$CLAUDE_PROJECT_DIR/core/` -> absolute clone path) ---
+# --- 2. commands/ (rewrite core refs -> absolute path inside dest) ---
 $cmdSrc = Join-Path $src 'commands'
 $cmdDst = Join-Path $dest 'commands'
 if (Test-Path $cmdSrc) {
     if (-not $Check) { New-Item -ItemType Directory -Force -Path $cmdDst | Out-Null }
+    $cmdFiles = @()
     foreach ($f in Get-ChildItem $cmdSrc -Filter *.md) {
         $body = Get-Content $f.FullName -Encoding UTF8 -Raw
+        # Legacy python tools path (retired rails) - leave repo tools if still present.
         $body = [regex]::Replace($body, 'python tools/(\S+\.py)', ('python "' + $repoFwd + '/tools/$1"'))
-        $body = $body.Replace('$CLAUDE_PROJECT_DIR/core/', ($repoFwd + '/core/'))
+        # Core rails/hooks: dest abs (cwd-resolved host), not clone.
+        $body = $body.Replace('$CLAUDE_PROJECT_DIR/core/', ($destFwd + '/core/'))
         $out  = Join-Path $cmdDst $f.Name
         if ($Check) {
             $cur = if (Test-Path $out) { Get-Content $out -Encoding UTF8 -Raw } else { '' }
             Write-Host ("[check] commands/{0}: {1}" -f $f.Name, $(if ($cur -ne $body) { 'would change' } else { 'in sync' }))
         } else {
             [System.IO.File]::WriteAllText($out, $body, (New-Object System.Text.UTF8Encoding $false))
+            $cmdFiles += $out
         }
     }
-    if (-not $Check) { Write-Host "[sync] commands/ (tool paths -> clone)" }
+    if (-not $Check) {
+        if ($cmdFiles.Count -gt 0) {
+            $rcArgs = @('rewrite-commands', '--dest', $dest, '--clone-root', $repo)
+            foreach ($cf in $cmdFiles) { $rcArgs += @('--file', $cf) }
+            Invoke-InstallRuntime $rcArgs
+        }
+        Write-Host "[sync] commands/ (tool paths -> dest)"
+    }
 }
 
 # --- 3. settings.json MERGE (hooks + permissions.deny; preserve existing keys) ---
 $setDst = Join-Path $dest 'settings.json'
-$hookCmd = 'node "' + $repoFwd + '/core/src/shim/command-hook.ts" claude'
-$tel     = 'node "' + $repoFwd + '/core/src/ops/telemetry-hook.ts"'
+$hookCmd = 'node "' + $destFwd + '/core/src/shim/command-hook.ts" claude'
+$tel     = 'node "' + $destFwd + '/core/src/ops/telemetry-hook.ts"'
 
 $cfg = $null
 if (Test-Path $setDst) {
@@ -276,6 +307,7 @@ if ($Check) {
     Write-Host ("[check] settings.json: {0}" -f $(if ($cur.Trim() -ne $json.Trim()) { 'would change (hooks/deny merged)' } else { 'in sync' }))
 } else {
     [System.IO.File]::WriteAllText($setDst, $json, (New-Object System.Text.UTF8Encoding $false))
+    Invoke-InstallRuntime @('rewrite-commands', '--dest', $dest, '--file', $setDst, '--clone-root', $repo)
     Write-Host "[sync] settings.json (hooks + permissions.deny merged, existing keys preserved)"
 }
 

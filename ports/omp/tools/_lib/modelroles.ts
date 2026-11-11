@@ -5,6 +5,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { resolveAiwfHeadDir, headConfigPath, headModelsPath } from "./aiwf_head.ts";
 
 // Роли, которые несёт machine-head config.yml modelRoles. Порядок = порядок опроса в binder'е.
 export const ROLES = ["default", "smol", "slow", "producer", "scaffolder", "critic", "explorer", "advisor"] as const;
@@ -128,13 +129,13 @@ export function writeModelRoles(configText: string, roles: Record<string, string
 
 /** config.yml: machine-head (~/.omp/agent) — единственный носитель modelRoles. */
 export function loadConfigText(): string {
-  const p = path.join(os.homedir(), ".omp", "agent", "config.yml");
+  const p = headConfigPath(resolveAiwfHeadDir());
   try { return fs.existsSync(p) ? fs.readFileSync(p, "utf8") : ""; } catch { return ""; }
 }
 
 /** models.yml: проектный <cwd>/.omp/models.yml → machine-head ~/.omp/agent/models.yml. */
 export function loadModelsText(cwd: string): string {
-  for (const p of [path.resolve(cwd, ".omp/models.yml"), path.join(os.homedir(), ".omp", "agent", "models.yml")]) {
+  for (const p of [path.resolve(cwd, ".omp/models.yml"), headModelsPath(resolveAiwfHeadDir())]) {
     try { if (fs.existsSync(p)) return fs.readFileSync(p, "utf8"); } catch { /* next */ }
   }
   return "";

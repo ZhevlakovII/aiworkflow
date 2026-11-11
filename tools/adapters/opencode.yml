@@ -16,6 +16,8 @@
 # ЖЁСТКО (C5, AD-render-privileged-writer п.3): guard-шим ЗДЕСЬ НЕ
 # ДЕКЛАРИРУЕТСЯ — шаблон фиксирован в движке рендера (core/src/render/).
 #
+# Port-static oneshot agents (not from canon render): ports/opencode/agents/aiwf-oneshot.md
+# and aiwf-reason.md — install must overlay these into dest agents/ (AD-opencode-native-oneshot).
 # OpenCode-специфика: НЕТ `model` в role-frontmatter (routing per-role живёт
 # вне agent-файла) -> `model` НЕ в `fields`. `tools` — полная явная bool-map
 # (`tools_format: bool_map` + `tools_universe`): КАЖДЫЙ ключ из universe

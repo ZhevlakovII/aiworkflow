@@ -1,16 +1,29 @@
-// modelroles (OpenCode) — self-contained resolve for plan/synthesize/archive_spec defaults.
+// modelroles (OpenCode) — resolve for plan/synthesize/archive_spec defaults.
+// Shared head (ADR AD-head-path-config-aiwf): AIWF_CONFIG_HOME -> XDG_CONFIG_HOME/aiwf -> ~/.config/aiwf.
+// No home-agent-dir SSOT; no hard-coded last-resort model id (AD-opencode-native-oneshot).
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
 const PRODUCT_MARKER = "# ===== AIWORKFLOW PRODUCT";
 
-function indentOf(line: string): number { return line.length - line.replace(/\t/g, "  ").trimStart().length; }
+function indentOf(line: string): number {
+  return line.length - line.replace(/\t/g, "  ").trimStart().length;
+}
 function headOf(text: string): string {
   for (const line of text.split("\n")) {
     if (line.startsWith(PRODUCT_MARKER)) return text.slice(0, text.indexOf(line));
   }
   return text;
+}
+
+/** Shared head directory (ADR §1). env injectable for tests. */
+export function resolveHeadDir(env: NodeJS.Dict<string> | NodeJS.ProcessEnv = process.env): string {
+  const override = String(env.AIWF_CONFIG_HOME ?? "").trim();
+  if (override) return path.resolve(override);
+  const xdg = String(env.XDG_CONFIG_HOME ?? "").trim();
+  if (xdg) return path.join(path.resolve(xdg), "aiwf");
+  return path.join(os.homedir(), ".config", "aiwf");
 }
 
 export function parseModelRoles(configText: string): Record<string, string> {
@@ -27,20 +40,26 @@ export function parseModelRoles(configText: string): Record<string, string> {
   return roles;
 }
 
-export function loadConfigText(): string {
-  const p = path.join(os.homedir(), ".omp", "agent", "config.yml");
+export function loadConfigText(env: NodeJS.Dict<string> | NodeJS.ProcessEnv = process.env): string {
+  const p = path.join(resolveHeadDir(env), "config.yml");
   try { return fs.existsSync(p) ? fs.readFileSync(p, "utf8") : ""; } catch { return ""; }
 }
 
-export const STRONG_MODEL_LAST_RESORT = "xai-oauth/grok-4.7";
-
-export function resolveStrongModel(opts?: { env?: string | null }): string {
+/**
+ * Strong one-shot model id:
+ *   tool env id (caller passes OMP_PLAN_MODEL) -> shared head producer -> slow -> default.
+ * Empty string if none — callers must fail with "no model id" (no last-resort hardcode).
+ */
+export function resolveStrongModel(opts?: {
+  env?: string | null;
+  processEnv?: NodeJS.Dict<string> | NodeJS.ProcessEnv;
+}): string {
   const fromEnv = (opts?.env ?? "").trim();
   if (fromEnv) return fromEnv;
-  const roles = parseModelRoles(loadConfigText());
+  const roles = parseModelRoles(loadConfigText(opts?.processEnv ?? process.env));
   for (const k of ["producer", "slow", "default"] as const) {
     const v = (roles[k] || "").trim();
     if (v) return v;
   }
-  return STRONG_MODEL_LAST_RESORT;
+  return "";
 }

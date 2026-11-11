@@ -6,6 +6,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { resolveAiwfHeadDir, headModelsPath } from "./aiwf_head.ts";
 
 export const DEFAULT_MAX_SUBAGENTS = 1;   // fail-safe: незаданная модель = 1 (последовательно, не перегружаем)
 
@@ -18,7 +19,7 @@ export interface ModelCaps {
 function modelsFiles(cwd: string): string[] {
   return [
     path.resolve(cwd, ".omp/models.yml"),
-    path.join(os.homedir(), ".omp", "agent", "models.yml"),
+    headModelsPath(resolveAiwfHeadDir()),
   ];
 }
 

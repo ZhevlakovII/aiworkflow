@@ -1,5 +1,5 @@
 // modelroles (DSH) — self-contained resolve for plan/synthesize/archive_spec defaults.
-// Reads ~/.omp/agent/config.yml modelRoles (same head as OMP); no cross-port imports.
+// Reads shared head config.yml modelRoles (AIWF_CONFIG_HOME | XDG | ~/.config/aiwf).
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -28,8 +28,16 @@ export function parseModelRoles(configText: string): Record<string, string> {
   return roles;
 }
 
+/** Shared head: AIWF_CONFIG_HOME | XDG_CONFIG_HOME/aiwf | ~/.config/aiwf */
+function resolveAiwfHeadDir(): string {
+  const forced = (process.env.AIWF_CONFIG_HOME || "").trim();
+  if (forced) return path.resolve(forced);
+  const xdg = (process.env.XDG_CONFIG_HOME || "").trim();
+  if (xdg) return path.resolve(xdg, "aiwf");
+  return path.join(os.homedir(), ".config", "aiwf");
+}
 export function loadConfigText(): string {
-  const p = path.join(os.homedir(), ".omp", "agent", "config.yml");
+  const p = path.join(resolveAiwfHeadDir(), "config.yml");
   try { return fs.existsSync(p) ? fs.readFileSync(p, "utf8") : ""; } catch { return ""; }
 }
 

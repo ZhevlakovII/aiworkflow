@@ -4,8 +4,8 @@
 # Deploys the .cursor layer (subagents + skills + hooks.json + short lead-rule include).
 # Root AGENTS.md = SSOT (project-scoped seed if-absent); rule must not duplicate body.
 # Default target = user-global ~/.cursor; --target <dir> stamps <dir>/.cursor.
-# Templates keep literal <clone>; install rewrites to absolute clone path.
-# Agents rendered fresh: node core/src/render/cli.ts render --out <tmp> --clients cursor.
+# Templates keep literal <clone>; install rewrites to absolute path inside <dest>
+# after vendoring core/src. Agents rendered fresh via core/src/render/cli.ts.
 #
 #   bash tools/install-cursor.sh --check
 #   bash tools/install-cursor.sh
@@ -35,6 +35,18 @@ AGENTS_MD_SRC="$REPO/AGENTS.md"
 
 if [ -n "$TARGET" ]; then DEST="$TARGET/.cursor"; SCOPED=1; else DEST="$HOME/.cursor"; SCOPED=0; fi
 
+if command -v cygpath >/dev/null 2>&1; then
+  REPO_ABS="$(cygpath -m "$REPO")"
+  DEST_ABS="$(cygpath -m "$DEST")"
+else
+  REPO_ABS="$REPO"
+  DEST_ABS="$DEST"
+fi
+RUNTIME_TS="$REPO/tools/install-runtime.ts"
+invoke_install_runtime() {
+  node "$RUNTIME_TS" "$@" || { echo "install-runtime failed: $*" >&2; exit 1; }
+}
+
 CANON_AGENT_NAMES=()
 KEPT_AGENT_OVERLAY_NAMES=()
 
@@ -44,8 +56,8 @@ same_agent_content() {
 }
 
 rewrite_clone() {
-    # stdin -> stdout, replace <clone> with absolute REPO
-    sed "s|<clone>|$REPO|g"
+    # stdin -> stdout, replace <clone> with absolute DEST (not clone/repo)
+    sed "s|<clone>|$DEST_ABS|g"
 }
 
 write_gitignore_block() {
@@ -107,6 +119,11 @@ echo "node:   $(node --version)"
 echo
 
 [ $CHECK -eq 0 ] && mkdir -p "$DEST"
+if [ $CHECK -eq 1 ]; then
+  echo "[check] would vendor core/src -> $DEST_ABS/core/src"
+else
+  invoke_install_runtime vendor --repo "$REPO_ABS" --dest "$DEST_ABS"
+fi
 
 # --- 1. agents/: render canon fresh ---
 RENDER_TMP="$(mktemp -d)"
@@ -155,7 +172,7 @@ if [ -d "$AGENTS_SRC" ]; then
 fi
 rm -rf "$RENDER_TMP"
 
-# --- 2. skills/ ---
+# --- 2. skills/ (<clone> -> dest abs) ---
 if [ -d "$SRC/skills" ]; then
   [ $CHECK -eq 0 ] && mkdir -p "$DEST/skills"
   for d in "$SRC/skills"/*/; do
@@ -173,7 +190,7 @@ if [ -d "$SRC/skills" ]; then
       printf '%s' "$rewritten" > "$out"
     fi
   done
-  [ $CHECK -eq 0 ] && echo "[sync] skills/ (<clone> -> absolute)"
+  [ $CHECK -eq 0 ] && echo "[sync] skills/ (<clone> -> dest)"
 fi
 
 # --- 3. hooks.json ---
@@ -185,9 +202,25 @@ if [ -f "$SRC/hooks.json" ]; then
     echo "[check] hooks.json: $st"
   else
     printf '%s' "$rewritten" > "$out"
-    echo "[sync] hooks.json (<clone> -> absolute)"
+    echo "[sync] hooks.json (<clone> -> dest)"
   fi
 fi
+
+# Heal leftover clone-root refs in dest command-ish files.
+if [ $CHECK -eq 0 ]; then
+  rc_args=(rewrite-commands --dest "$DEST_ABS" --clone-root "$REPO_ABS")
+  [ -f "$DEST/hooks.json" ] && rc_args+=(--file "$DEST/hooks.json")
+  if [ -d "$DEST/skills" ]; then
+    while IFS= read -r -d '' sf; do rc_args+=(--file "$sf"); done < <(find "$DEST/skills" -name 'SKILL.md' -print0 2>/dev/null)
+  fi
+  if [ -d "$DEST/agents" ]; then
+    while IFS= read -r -d '' af; do rc_args+=(--file "$af"); done < <(find "$DEST/agents" -name '*.md' -print0 2>/dev/null)
+  fi
+  if [ "${#rc_args[@]}" -gt 4 ]; then
+    invoke_install_runtime "${rc_args[@]}"
+  fi
+fi
+
 
 # --- 4. Lead: root AGENTS.md = SSOT (project-scoped if-absent); rule is short include, must not duplicate body ---
 if [ $SCOPED -eq 1 ] && [ -f "$AGENTS_MD_SRC" ]; then

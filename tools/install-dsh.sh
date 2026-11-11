@@ -47,8 +47,10 @@ if [ -n "$TARGET" ]; then
   OVERLAY="$TARGET/.dsh-aiwf"
 fi
 
-CORE_RE='(\.\./)+core/src/'
-CORE_ABS="$REPO_ABS/core/src/"
+RUNTIME_TS="$REPO/tools/install-runtime.ts"
+invoke_install_runtime() {
+  node "$RUNTIME_TS" "$@" || { echo "install-runtime failed: $*" >&2; exit 1; }
+}
 
 echo "flavor: dsh"
 echo "SRC:     $SRC"
@@ -57,31 +59,29 @@ echo "patch:   $PATCH_DST"
 echo "overlay: ${OVERLAY:-<none> (pass --target for project overlay)}"
 echo
 
-rewrite_core_imports_tree() {
-  local d="$1" f
-  [ -d "$d" ] || return 0
-  while IFS= read -r -d '' f; do
-    if grep -qE "$CORE_RE" "$f" 2>/dev/null; then
-      sed -E "s#$CORE_RE#$CORE_ABS#g" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
-    fi
-  done < <(find "$d" -name '*.ts' -print0)
+new_import_rewritten_shadow() {
+  local srcDir="$1" shadowRoot
+  shadowRoot="$(mktemp -d)"
+  cp -Rp "$srcDir/." "$shadowRoot/"
+  invoke_install_runtime rewrite-imports --dest "$shadowRoot" --under "$shadowRoot"
+  printf '%s' "$shadowRoot"
 }
 
 mirror_plugin() {
   local shadow
-  shadow="$(mktemp -d)"
-  cp -Rp "$SRC/." "$shadow/"
-  # package metadata only in SRC; skip nested .git if any
-  rewrite_core_imports_tree "$shadow"
+  shadow="$(new_import_rewritten_shadow "$SRC")"
   if [ "$CHECK" -eq 1 ]; then
-  if [ -d "$PLUGIN_DEST" ]; then
-    echo "[check] plugin: $(diff -rq "$shadow" "$PLUGIN_DEST" 2>/dev/null | wc -l) diff lines"
-  else
-    echo "[check] plugin: would create $PLUGIN_DEST"
-  fi
+    echo "[check] would vendor core/src -> $PLUGIN_DEST/core/src"
+    if [ -d "$PLUGIN_DEST" ]; then
+      echo "[check] plugin: $(diff -rq "$shadow" "$PLUGIN_DEST" 2>/dev/null | wc -l) diff lines"
+    else
+      echo "[check] plugin: would create $PLUGIN_DEST"
+    fi
   else
     mkdir -p "$PLUGIN_DEST"
+    invoke_install_runtime vendor --repo "$REPO_ABS" --dest "$PLUGIN_DEST"
     cp -Rp "$shadow/." "$PLUGIN_DEST/"
+    invoke_install_runtime rewrite-imports --dest "$PLUGIN_DEST" --under "$PLUGIN_DEST"
     echo "[sync] plugin -> $PLUGIN_DEST"
   fi
   rm -rf "$shadow"

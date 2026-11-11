@@ -1,5 +1,5 @@
 // plan — one-shot: читает спеку/задачу, строит step-by-step имплементационный план (порт OMP tools/plan.ts).
-// Утилита ВНЕ автономного контура (не рельс, не гейт). Сильная модель (omp -p) read-only мыслит;
+// Утилита ВНЕ автономного контура (не рельс, не гейт). Сильная модель (opencode run oneshot) read-only мыслит;
 // тул детерминированно пишет план-артефакт.
 import { tool } from "@opencode-ai/plugin";
 import * as fs from "node:fs";
@@ -16,7 +16,7 @@ const SYS =
 export default tool({
   description:
     "One-shot утилита (вне автономного контура): читает спеку/task-file и строит step-by-step " +
-    "имплементационный план сильной моделью (omp -p, read-only). Пишет план-артефакт, возвращает pointer.",
+    "имплементационный план сильной моделью (opencode run --agent aiwf-oneshot, read-only). Пишет план-артефакт, возвращает pointer.",
   args: {
     spec: tool.schema.string().describe("путь к спеке/task-file для планирования"),
     out: tool.schema.string().optional().describe("куда писать план (дефолт .workflow/plans/<spec>-plan.md)"),
@@ -26,7 +26,8 @@ export default tool({
     const cwd = ctx?.directory ?? process.cwd();
     const specPath = path.resolve(cwd, params.spec);
     if (!fs.existsSync(specPath)) return err("spec не найден: " + params.spec);
-    const model = params.model || resolveStrongModel({ env: process.env.OMP_PLAN_MODEL });
+    const model = (params.model || "").trim() || resolveStrongModel({ env: process.env.OMP_PLAN_MODEL });
+    if (!model) return err("no model id: pass model arg, set OMP_PLAN_MODEL, or shared-head modelRoles producer/slow/default");
     const base = path.basename(params.spec).replace(/\.md$/, "");
     const outRel = params.out || `.workflow/plans/${base}-plan.md`;
     const outPath = path.resolve(cwd, outRel);
@@ -37,7 +38,7 @@ export default tool({
       `Верни план реализации в markdown.`;
     const r = await runClaudeText(cwd, model, SYS, user);
     if (r.code !== 0 || !r.text)
-      return err(`omp rc=${r.code}\n${(r.stderr || "").slice(-1200)}`);
+      return err(`opencode oneshot rc=${r.code}\n${(r.stderr || "").slice(-1200)}`);
 
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
     fs.writeFileSync(outPath, r.text + "\n", "utf8");

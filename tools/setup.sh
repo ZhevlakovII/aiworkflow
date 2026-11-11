@@ -4,8 +4,8 @@
 # Wraps install.sh with four extra steps:
 #   1) prereq detection (OMP/Node/git/ast-index; opt Claude/Java/codex) + INTERACTIVE install via
 #      the platform package manager (brew on macos; apt/dnf/pacman/zypper on linux; npm for codex);
-#   2) machine-head bootstrap - seed ~/.omp/agent/{models.yml, config.yml modelRoles} from tools/templates/
-#      ONLY when absent (never overwrite a real machine-head);
+#   2) shared-head bootstrap - seed ~/.config/aiwf (any omp|opencode|dsh flow) from tools/templates/
+#      ONLY when absent (never overwrite a real shared head); migrate legacy once;
 #   2b) modelRoles bind - interactively pick a model per role from the REAL models.yml, validate,
 #       notify on unset/unknown roles (setup_roles.ts). --default-roles = non-interactive defaults;
 #   3) install.sh - deploy product (preserves machine-head);
@@ -66,12 +66,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 REPO="$(dirname "$SCRIPT_DIR")"
 CANON="$REPO/ports/omp"
 GLOBAL="$HOME/.omp/agent"
+SHARED_HEAD="${AIWF_CONFIG_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/aiwf}"
 TEMPLATES="$SCRIPT_DIR/templates"
 
 echo "=== AI Workflow setup ==="
 echo "flow:   $FLOW  (omp=$DO_OMP claude=$DO_CLAUDE opencode=$DO_OPENCODE cursor=$DO_CURSOR dsh=$DO_DSH)"
 echo "canon:  $CANON"
-echo "global: $GLOBAL"
+echo "shared-head: $SHARED_HEAD  (legacy agent: $GLOBAL)"
 echo ""
 
 # --- package manager detection ---
@@ -259,60 +260,38 @@ if [ "$CHECK" = "0" ]; then
     fi
 fi
 
-if [ "$DO_OMP" = "1" ]; then
-# --- 2. Machine-head bootstrap (seed ONLY when absent) ---
-modelsDst="$GLOBAL/models.yml"
-cfgDst="$GLOBAL/config.yml"
-modelsTpl="$TEMPLATES/models.yml.example"
-headTpl="$TEMPLATES/machine-head.yml.example"
-MARKER='# ===== AIWORKFLOW PRODUCT'
-
-has_model_roles() {
-    # true if a modelRoles: line exists in the head (above MARKER) of $1.
-    [ -f "$1" ] || return 1
-    awk -v m="$MARKER" 'index($0,m)==1{exit} /^[[:space:]]*modelRoles[[:space:]]*:/{found=1; exit} END{exit !found}' "$1"
-}
-
-seedModels=0; [ -f "$modelsDst" ] || seedModels=1
-seedHead=0;   has_model_roles "$cfgDst" || seedHead=1
-
-echo "--- machine-head ---"
-if [ "$CHECK" = "1" ]; then
-    if [ "$seedModels" = "1" ]; then echo "  models.yml: ABSENT   -> would seed from template"; else echo "  models.yml: present  -> keep"; fi
-    if [ "$seedHead" = "1" ];   then echo "  modelRoles: ABSENT   -> would seed from template"; else echo "  modelRoles: present  -> keep"; fi
-    echo ""
+# --- 2. Shared head (neutral): any resolving flow (omp|opencode|dsh), not only DO_OMP ---
+NEED_HEAD=0
+if [ "$DO_OMP" = "1" ] || [ "$DO_OPENCODE" = "1" ] || [ "$DO_DSH" = "1" ]; then NEED_HEAD=1; fi
+if [ "$NEED_HEAD" = "1" ]; then
+headCli="$SCRIPT_DIR/aiwf_head_cli.ts"
+echo "--- shared-head ---"
+if ! command -v node >/dev/null 2>&1; then
+    echo "  [skip] node absent - cannot ensure shared head."
+elif [ "$CHECK" = "1" ]; then
+    node "$headCli" ensure --check --templates "$TEMPLATES"
 else
-    mkdir -p "$GLOBAL"
-    if [ "$seedModels" = "1" ]; then
-        cp "$modelsTpl" "$modelsDst"
-        echo "  [seed] models.yml <- template (EDIT endpoint/model for your machine!)"
-    else echo "  [keep] models.yml present - untouched"; fi
-    if [ "$seedHead" = "1" ]; then
-        if [ -f "$cfgDst" ]; then
-            tmp="$(mktemp)"; { cat "$headTpl"; printf '\n'; cat "$cfgDst"; } > "$tmp"; mv "$tmp" "$cfgDst"
-        else
-            cp "$headTpl" "$cfgDst"
-        fi
-        echo "  [seed] config.yml modelRoles <- template (composer/4.7 matrix)"
-    else echo "  [keep] modelRoles present - untouched"; fi
-    echo ""
+    node "$headCli" ensure --templates "$TEMPLATES"
 fi
+echo ""
 
-# --- 2b. modelRoles bind: pick per-role model from the REAL models.yml (interactive) + validate ---
+# --- 2b. modelRoles bind against shared head ---
 rolesTool="$SCRIPT_DIR/setup_roles.ts"
 echo "--- modelRoles ---"
 if ! command -v node >/dev/null 2>&1; then
     echo "  [skip] node absent - cannot bind/validate modelRoles."
 elif [ "$CHECK" = "1" ]; then
-    node "$rolesTool" --check --config "$cfgDst" --models "$modelsDst"      # report only
+    node "$rolesTool" --check
 elif [ "$DEFAULT_ROLES" = "1" ]; then
-    node "$rolesTool" --defaults --config "$cfgDst" --models "$modelsDst"   # non-interactive defaults
+    node "$rolesTool" --defaults
 else
-    node "$rolesTool" --config "$cfgDst" --models "$modelsDst"             # interactive per-role pick
+    node "$rolesTool"
 fi
 echo ""
+fi  # end NEED_HEAD
 
-# --- 3. install.sh (deploy product; preserves machine-head; --target -> project-scoped OMP too, A3 req 5) ---
+if [ "$DO_OMP" = "1" ]; then
+# --- 3. install.sh (deploy product; head already ensured above) ---
 echo "--- install.sh ---"
 omp_args=""
 [ "$CHECK" = "1" ]       && omp_args="$omp_args --check"
@@ -334,6 +313,7 @@ if [ "$CHECK" = "0" ] && [ "$SKIP_SMOKE" = "0" ]; then
     echo ""
 fi
 fi  # end if DO_OMP
+
 
 # --- 5. Claude Code flavor (agents + commands + hooks + settings) ---
 if [ "$DO_CLAUDE" = "1" ]; then
