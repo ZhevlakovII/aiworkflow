@@ -170,7 +170,7 @@ new_import_rewritten_shadow() {
   parent="$(dirname "$shadowSub")"
   mkdir -p "$parent"
   cp -Rp "$srcDir/." "$shadowSub/"
-  invoke_install_runtime rewrite-imports --dest "$shadowRoot" --under "$shadowSub"
+  invoke_install_runtime rewrite-imports --dest "$shadowRoot" --under "$shadowSub" >&2
   printf '%s' "$shadowRoot"
 }
 

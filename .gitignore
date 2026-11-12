@@ -37,3 +37,5 @@ test-project/
 
 # DSH project overlay (installer stamps from ports/dsh; not SRC)
 .dsh-aiwf/
+
+/dist/

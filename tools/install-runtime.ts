@@ -369,7 +369,7 @@ function main(argv: string[]): number {
     const dest = arg("--dest", argv);
     if (!dest) usage();
     const r = vendorCoreSrc(repo, dest as string);
-    console.log(
+    console.error(
       "[vendor] " + r.copiedFiles + " files -> " + r.destCoreSrc +
         (r.neighbors.length ? " (neighbors: " + r.neighbors.join(", ") + ")" : ""),
     );
@@ -383,12 +383,12 @@ function main(argv: string[]): number {
     for (const u of unders) {
       const r = rewriteImportsUnder(u, dest as string);
       total += r.filesChanged;
-      console.log(
+      console.error(
         "[rewrite-imports] under=" + path.resolve(u) +
           " scanned=" + r.filesScanned + " changed=" + r.filesChanged,
       );
     }
-    console.log("[rewrite-imports] total changed=" + total);
+    console.error("[rewrite-imports] total changed=" + total);
     return 0;
   }
   if (cmd === "rewrite-commands") {
@@ -399,7 +399,7 @@ function main(argv: string[]): number {
     const r = rewriteCommandFiles(files, dest as string, {
       cloneRoot: cloneRoots.length ? cloneRoots : undefined,
     });
-    console.log(
+    console.error(
       "[rewrite-commands] scanned=" + r.filesScanned +
         " changed=" + r.filesChanged + " dest=" + fwdAbs(dest as string),
     );

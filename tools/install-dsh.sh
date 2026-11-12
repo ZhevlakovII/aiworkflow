@@ -63,7 +63,7 @@ new_import_rewritten_shadow() {
   local srcDir="$1" shadowRoot
   shadowRoot="$(mktemp -d)"
   cp -Rp "$srcDir/." "$shadowRoot/"
-  invoke_install_runtime rewrite-imports --dest "$shadowRoot" --under "$shadowRoot"
+  invoke_install_runtime rewrite-imports --dest "$shadowRoot" --under "$shadowRoot" >&2
   printf '%s' "$shadowRoot"
 }
 

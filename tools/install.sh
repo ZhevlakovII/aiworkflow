@@ -155,7 +155,7 @@ new_import_rewritten_shadow() { # $1 srcDir $2 relUnder -> prints shadowRoot
   parent="$(dirname "$shadowSub")"
   mkdir -p "$parent"
   cp -Rp "$srcDir/." "$shadowSub/"
-  invoke_install_runtime rewrite-imports --dest "$shadowRoot" --under "$shadowSub"
+  invoke_install_runtime rewrite-imports --dest "$shadowRoot" --under "$shadowSub" >&2
   printf '%s' "$shadowRoot"
 }
 
@@ -188,8 +188,6 @@ tree_diff_count() {
     echo "$n"
 }
 
-SHADOW_ROOT="$(mktemp -d)"
-trap 'rm -rf "$SHADOW_ROOT"' EXIT
 
 invoke_aiwf_vendor
 

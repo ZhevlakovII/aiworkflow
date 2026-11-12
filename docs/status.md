@@ -22,6 +22,8 @@
 | plan/synthesize/archive defaults (2026-11-10) | `resolveStrongModel` from live OMP modelRoles (producer→slow→default); OpenCode oneshot → omp -p |
 | Installer vendor+rewrite (wave B, 2026-11-11) | Все flavor installers (`install`/`install-*` ps1+sh) зовут `tools/install-runtime.ts`: vendor `core/src` в dest, rewrite imports file-relative, commands abs-in-dest; OpenCode oneshot/reason overlay; Cursor included; `-Check` would-vendor |
 | Bootstrap+docs (wave C, 2026-11-11) | Bootstrap = release zip+sha256 (not clone-root); shared head AIWF_CONFIG_HOME / XDG / ~/.config/aiwf; legacy models.yml strip + modelRoles→OMP sync; all includes cursor+dsh; OpenCode rewrite-to-dest; update=re-bootstrap; uninstall=installer flag, head preserved |
+| Install shadow stdout fix (2026-11-12) | `rewrite-imports`/`vendor`/`rewrite-commands` status → stderr; bash `new_import_rewritten_shadow` redirects runtime to `>&2` so command-sub captures only shadow path (macOS rsync exit 23) |
+
 
 
 Указатели: `.workflow/ledger/b-track-status-2026-10-30.md`, `layout-agents-cleanup-2026-11-02.md`, `core-ports-finish-2026-11-06.md`, `flow-rollout-composer-2026-11-10.md`, `cursor-omp-model-align-2026-11-10.md`, `plan-strong-model-modelroles-2026-11-10.md`, `wave-b-installers-vendor-2026-11-11.md`, `wave-c-bootstrap-docs-2026-11-11.md`.
