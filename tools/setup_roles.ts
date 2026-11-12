@@ -3,8 +3,9 @@
 // config.yml, then syncs modelRoles into home agent dir config.yml for OMP @role.
 //
 // Modes:
-//   (default)   interactive: pick model per role / keep / unset.
-//   --defaults  no prompts: unresolved roles -> default model (first in models.yml or --model X).
+//   (default)   interactive: pick model per role / keep / unset / skip (keep exact current).
+//   --defaults  no prompts: empty/unset roles -> default model (first in models.yml or --model X);
+//               non-empty roles kept even if not in models.yml.
 //   --check     report only, writes nothing (setup -Check). exit 0.
 //   --model X   default model for --defaults / interactive suggestion.
 //   --config P / --models P — override paths (test/nonstandard).
@@ -87,7 +88,7 @@ async function main(): Promise<number> {
 
   if (!interactive) {
     if (!wantDefaults) console.log("  [note] non-interactive stdin -> defaults mode.");
-    for (const r of ROLES) if (!modelResolves(models, next[r] || "")) next[r] = defModel;
+    for (const r of ROLES) if (!(next[r] || "").trim()) next[r] = defModel;
     persistRoles(configText, next);
     console.log("  [seed] unset roles -> " + defModel);
     reportIssues(next, models);
@@ -96,7 +97,7 @@ async function main(): Promise<number> {
 
   console.log("Models from models.yml:");
   models.forEach((m, i) => console.log("  " + (i + 1) + ") " + m.full));
-  console.log("Per role: model number | Enter = keep | u = unset." + String.fromCharCode(10));
+  console.log("Per role: model number | Enter = keep | u = unset | s = skip." + String.fromCharCode(10));
 
   const rlIn = tty?.in ?? stdin;
   const rlOut = tty?.out ?? stdout;
@@ -110,6 +111,7 @@ async function main(): Promise<number> {
       const ans = (await rl.question("  " + r + " [current: " + label + "] -> suggest " + suggestion + ": ")).trim();
       if (ans === "") { next[r] = curOk ? cur : suggestion; }
       else if (ans.toLowerCase() === "u") { next[r] = ""; }
+      else if (ans.toLowerCase() === "s") { next[r] = cur; }
       else {
         const n = parseInt(ans, 10);
         if (Number.isInteger(n) && n >= 1 && n <= models.length) next[r] = models[n - 1].full;

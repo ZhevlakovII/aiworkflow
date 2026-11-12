@@ -119,12 +119,17 @@ $destFwd = ($dest -replace '\\', '/')
 
 function Invoke-InstallRuntime {
     param([Parameter(Mandatory = $true)][string[]]$RtArgs)
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     $out = & node $runtimeTs @RtArgs 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw ("install-runtime failed ({0}): {1}" -f $LASTEXITCODE, ($out | Out-String))
+    $code = $LASTEXITCODE
+    $ErrorActionPreference = $prevEap
+    if ($code -ne 0) {
+        throw ("install-runtime failed ({0}): {1}" -f $code, ($out | Out-String))
     }
     foreach ($line in @($out)) {
-        if (("$line").Trim().Length -gt 0) { Write-Host $line }
+        $text = if ($line -is [System.Management.Automation.ErrorRecord]) { [string]$line } else { "$line" }
+        if ($text.Trim().Length -gt 0) { Write-Host $text }
     }
 }
 
@@ -189,8 +194,16 @@ try {
     $rendererScript = Join-Path $repo 'core\src\render\cli.ts'
     $canonRoleRoot = Join-Path $repo 'canon'
     $adaptersRoot  = Join-Path $repo 'tools\adapters'
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     $renderOut = & node $rendererScript render --out $renderTmp --clients opencode --canon $canonRoleRoot --adapters $adaptersRoot 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "canon render failed (exit $LASTEXITCODE): $renderOut" }
+    $renderCode = $LASTEXITCODE
+    $ErrorActionPreference = $prevEap
+    if ($renderCode -ne 0) { throw "canon render failed (exit $renderCode): $renderOut" }
+    foreach ($line in @($renderOut)) {
+        $text = if ($line -is [System.Management.Automation.ErrorRecord]) { [string]$line } else { "$line" }
+        if ($text.Trim().Length -gt 0) { Write-Host $text }
+    }
 
     $agentsSrc = Join-Path $renderTmp '.opencode\agents'
     $agentsDirDst = Join-Path $dest 'agents'

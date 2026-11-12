@@ -37,12 +37,17 @@ $destFwd = ($pluginDest -replace '\\', '/')
 
 function Invoke-InstallRuntime {
   param([Parameter(Mandatory = $true)][string[]]$RtArgs)
+  $prevEap = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
   $out = & node $runtimeTs @RtArgs 2>&1
-  if ($LASTEXITCODE -ne 0) {
-    throw ("install-runtime failed ({0}): {1}" -f $LASTEXITCODE, ($out | Out-String))
+  $code = $LASTEXITCODE
+  $ErrorActionPreference = $prevEap
+  if ($code -ne 0) {
+    throw ("install-runtime failed ({0}): {1}" -f $code, ($out | Out-String))
   }
   foreach ($line in @($out)) {
-    if (("$line").Trim().Length -gt 0) { Write-Host $line }
+    $text = if ($line -is [System.Management.Automation.ErrorRecord]) { [string]$line } else { "$line" }
+    if ($text.Trim().Length -gt 0) { Write-Host $text }
   }
 }
 
