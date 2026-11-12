@@ -242,6 +242,96 @@ find_payload_root() {
   return 1
 }
 
+locate_extract_script() {
+  local cand=""
+  if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+    cand="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/tools/extract-zip.py"
+    if [ -f "$cand" ]; then
+      printf '%s\n' "$cand"
+      return 0
+    fi
+  fi
+  if [ -f "tools/extract-zip.py" ]; then
+    printf '%s\n' "tools/extract-zip.py"
+    return 0
+  fi
+  return 1
+}
+
+payload_has_setup() {
+  local extract_dir="$1"
+  if [ -f "$extract_dir/tools/setup.sh" ]; then
+    return 0
+  fi
+  local d
+  for d in "$extract_dir"/*; do
+    if [ -d "$d" ] && [ -f "$d/tools/setup.sh" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Info-ZIP may store backslash separators as a single filename. Move those
+# files into the nested relative path. Reject absolute names and '..' segments.
+rewrite_backslash_names() {
+  local root="$1"
+  local f rel norm dest seg oldifs moved=0
+  if ! command -v find >/dev/null 2>&1; then
+    echo "ERROR: find is required to rewrite backslash zip names" >&2
+    exit 1
+  fi
+  while IFS= read -r -d '' f; do
+    if [ "$f" = "$root" ]; then
+      continue
+    fi
+    rel="${f#"$root"/}"
+    case "$rel" in
+      *\\*) ;;
+      *) continue ;;
+    esac
+    norm="${rel//\\//}"
+    case "$norm" in
+      /*|\\*)
+        echo "ERROR: refusing absolute extracted name" >&2
+        exit 1
+        ;;
+      [A-Za-z]:*)
+        echo "ERROR: refusing absolute extracted name" >&2
+        exit 1
+        ;;
+    esac
+    oldifs="$IFS"
+    IFS='/'
+    for seg in $norm; do
+      if [ "$seg" = ".." ]; then
+        echo "ERROR: refusing extracted name with .." >&2
+        exit 1
+      fi
+    done
+    IFS="$oldifs"
+    dest="$root/$norm"
+    if [ "$f" = "$dest" ]; then
+      continue
+    fi
+    mkdir -p "$(dirname "$dest")"
+    if [ -d "$f" ] && [ ! -L "$f" ]; then
+      if [ -d "$dest" ]; then
+        rmdir "$f" 2>/dev/null || true
+      else
+        mv -- "$f" "$dest"
+      fi
+    else
+      mv -f -- "$f" "$dest"
+    fi
+    moved=1
+  done < <(find "$root" -depth -print0)
+  if [ "$moved" -eq 1 ]; then
+    echo "rewrote literal-backslash zip names into nested paths"
+  fi
+}
+
+
 cache_root() {
   if [ -n "${XDG_CACHE_HOME:-}" ]; then
     printf '%s\n' "${XDG_CACHE_HOME}/aiwf-install"
@@ -334,20 +424,46 @@ echo "SHA-256 OK (${ACTUAL})"
 
 echo "== extracting to cache =="
 mkdir -p "$EXTRACT_DIR"
-if command -v unzip >/dev/null 2>&1; then
-  unzip -q -o "$ZIP_PATH" -d "$EXTRACT_DIR"
-elif command -v bsdtar >/dev/null 2>&1; then
-  bsdtar -xf "$ZIP_PATH" -C "$EXTRACT_DIR"
-elif command -v tar >/dev/null 2>&1 && tar -tf "$ZIP_PATH" >/dev/null 2>&1; then
-  tar -xf "$ZIP_PATH" -C "$EXTRACT_DIR"
+PY_BIN=""
+if command -v python3 >/dev/null 2>&1; then
+  PY_BIN="python3"
+elif command -v python >/dev/null 2>&1; then
+  PY_BIN="python"
+fi
+EXTRACT_SCRIPT=""
+if [ -n "$PY_BIN" ]; then
+  EXTRACT_SCRIPT="$(locate_extract_script || true)"
+fi
+if [ -n "$PY_BIN" ] && [ -n "$EXTRACT_SCRIPT" ]; then
+  "$PY_BIN" "$EXTRACT_SCRIPT" "$ZIP_PATH" "$EXTRACT_DIR"
 else
-  # python fallback (stdlib zipfile)
-  python - "$ZIP_PATH" "$EXTRACT_DIR" <<'PY'
+  if command -v unzip >/dev/null 2>&1; then
+    set +e
+    unzip -q -o "$ZIP_PATH" -d "$EXTRACT_DIR"
+    unzip_rc=$?
+    set -e
+    if [ "$unzip_rc" -gt 1 ]; then
+      echo "ERROR: unzip failed with code ${unzip_rc}" >&2
+      exit "$unzip_rc"
+    fi
+  elif command -v bsdtar >/dev/null 2>&1; then
+    bsdtar -xf "$ZIP_PATH" -C "$EXTRACT_DIR"
+  elif command -v tar >/dev/null 2>&1 && tar -tf "$ZIP_PATH" >/dev/null 2>&1; then
+    tar -xf "$ZIP_PATH" -C "$EXTRACT_DIR"
+  elif [ -n "$PY_BIN" ]; then
+    "$PY_BIN" - "$ZIP_PATH" "$EXTRACT_DIR" <<'PY'
 import sys, zipfile
 z, d = sys.argv[1], sys.argv[2]
 with zipfile.ZipFile(z) as zf:
     zf.extractall(d)
 PY
+  else
+    echo "ERROR: need python3, python, or unzip to extract install zip" >&2
+    exit 1
+  fi
+  if ! payload_has_setup "$EXTRACT_DIR"; then
+    rewrite_backslash_names "$EXTRACT_DIR"
+  fi
 fi
 
 PAYLOAD_ROOT="$(find_payload_root "$EXTRACT_DIR")"

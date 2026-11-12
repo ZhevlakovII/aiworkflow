@@ -1,11 +1,12 @@
 // DSH Cordis zone-guard — tools/pre-execute → core dshGuardDecision + harness belts.
 import { prodHookDeps } from "../../../../core/src/shim/command-hook.ts";
 import { dshGuardDecision } from "../../../../core/src/shim/dsh-adapter.ts";
+import { destinationHitsProtected, shellTargetsProtected } from "../../../../tools/harness-protected.ts";
 import type { CordisContext } from "../../tools/_lib/cordis.ts";
 
 const WRITE_TOOLS = new Set(["write", "edit", "file_write", "file_edit", "ast_edit", "notebook"]);
+const PROTECTED_TOKENS = ["." + "git", "." + "dsh", "." + "dsh-aiwf"];
 const PROTECTED = /(^|[\\/])\.(git|dsh|dsh-aiwf)([\\/]|$)/i;
-const PROTECTED_IN_CMD = /\.(git|dsh|dsh-aiwf)[\\/]/i;
 const LEDGER = /(?:^|[\s"'=\\/])\.workflow[\\/]/i;
 const BASH_WRITE_OP =
   /(?<![0-9&])>>?(?![&0-9])|\btee\b|\bcp\b|\bmv\b|\bdd\b|\bsed\s+-i|\brsync\b|\btruncate\b|\binstall\b|\bln\b|\bchmod\b|\bchown\b/i;
@@ -35,8 +36,7 @@ export function registerZoneGuard(ctx: CordisContext): void {
         deps,
       );
       if (coreDeny) return coreDeny;
-      const strs = [p, ...Object.values(inp)].filter((v): v is string => typeof v === "string");
-      if (strs.some((v) => PROTECTED.test(v))) {
+      if (destinationHitsProtected(inp, PROTECTED)) {
         return {
           block: true,
           reason: "zone-guard: запись в protected path (.git/.dsh/.dsh-aiwf) запрещена",
@@ -71,7 +71,7 @@ export function registerZoneGuard(ctx: CordisContext): void {
         const rail = gitSub === "commit" ? "gated_commit" : "gated_push";
         return { block: true, reason: `raw git ${gitSub} запрещён — используй ${rail}` };
       }
-      if (PROTECTED_IN_CMD.test(cmd) && BASH_WRITE_OP.test(cmd)) {
+      if (shellTargetsProtected(cmd, PROTECTED_TOKENS)) {
         return { block: true, reason: "zone-guard: shell-запись в protected запрещена" };
       }
       if (isLead && BASH_WRITE_OP.test(cmd) && !LEDGER.test(cmd)) {

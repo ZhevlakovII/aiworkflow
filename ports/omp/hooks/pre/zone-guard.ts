@@ -18,10 +18,11 @@ import type { HookAPI } from "@oh-my-pi/pi-coding-agent/extensibility/hooks";
 import { prodHookDeps } from "../../../../core/src/shim/command-hook.ts";
 import { ompGuardDecision } from "../../../../core/src/shim/omp-adapter.ts";
 import { recordGuard } from "../../tools/_lib/telemetry";
+import { destinationHitsProtected, shellTargetsProtected } from "../../../../tools/harness-protected.ts";
 
 const WRITE_TOOLS = new Set(["write", "edit", "ast_edit", "notebook"]);
+const PROTECTED_TOKENS = ["." + "git", "." + "omp"];
 const PROTECTED = /(^|[\\/])\.(git|omp)([\\/]|$)/i;                 // путь в .git/.omp
-const PROTECTED_IN_CMD = /\.(git|omp)[\\/]/i;
 // единственная lead-writable зона; матчит .workflow/ и как bare-path (^), и внутри bash-команды (после пробела/кавычки/=)
 const LEDGER = /(?:^|[\s"'=\\/])\.workflow[\\/]/i;
 // redirect `>`/`>>` не как fd-dup (`2>&1`), плюс write-команды
@@ -61,8 +62,7 @@ export default function hook(pi: HookAPI): void {
         });
         return coreDeny;
       }
-      const strs = [p, ...Object.values(inp)].filter((v): v is string => typeof v === "string");
-      if (strs.some((v) => PROTECTED.test(v))) {
+      if (destinationHitsProtected(inp, PROTECTED)) {
         recordGuard(cwd, { event: "protected-write", tool: "zone-guard", detail: `${name} → ${p}` });
         return { block: true, reason: "zone-guard: запись в protected path (.git/.omp) запрещена" };
       }
@@ -93,7 +93,7 @@ export default function hook(pi: HookAPI): void {
         recordGuard(cwd, { event: "raw-git-deny", tool: "zone-guard", detail: cmd.slice(0, 200) });
         return { block: true, reason: "commit-rail: raw `git commit` запрещён. Коммить нативным тулом `gated_commit` (message, task) — зона+тест гейтятся, коммит только при зелёном." };
       }
-      if (PROTECTED_IN_CMD.test(cmd) && BASH_WRITE_OP.test(cmd)) {
+      if (shellTargetsProtected(cmd, PROTECTED_TOKENS)) {
         recordGuard(cwd, { event: "protected-write", tool: "zone-guard", detail: cmd.slice(0, 200) });
         return { block: true, reason: "zone-guard: shell-запись в .git/.omp запрещена" };
       }

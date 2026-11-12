@@ -18,10 +18,11 @@ import type { Plugin } from "@opencode-ai/plugin";
 import { prodHookDeps } from "../../../core/src/shim/command-hook.ts";
 import { opencodeGuardDecision } from "../../../core/src/shim/opencode-adapter.ts";
 import { recordGuard } from "../lib/telemetry";
+import { destinationHitsProtected, shellTargetsProtected } from "../../../tools/harness-protected.ts";
 
 const WRITE_TOOLS = new Set(["write", "edit", "patch", "notebook"]);
+const PROTECTED_TOKENS = ["." + "git", "." + "omp", "." + "opencode"];
 const PROTECTED = /(^|[\\/])\.(git|omp|opencode)([\\/]|$)/i;
-const PROTECTED_IN_CMD = /\.(git|omp|opencode)[\\/]/i;
 // git-мутации (первое слово подкоманды). READ-подкоманды (status/diff/log/...) НЕ здесь → разрешены.
 const GIT_MUT = /\bgit\s+(commit|add|push|merge|reset|checkout|restore|clean|stash|rm|apply|cherry-pick|rebase|tag)\b/i;
 const RAIL: Record<string, string> = {
@@ -32,7 +33,6 @@ const RAIL: Record<string, string> = {
 const PIPE_SHELL = /\|\s*(sh|bash)\b/;
 const NC_SSH = /(^|[;&|]\s*)(nc|ssh)\s/;
 const RM_RF = /\brm\s+(-\w*r\w*f|-\w*f\w*r|-rf|-fr)\b/;
-const BASH_WRITE_PROTECTED = /(>>?|tee\s+|\brm\s+|\bmv\s+|\bcp\s+)[^\n]*\.(git|omp|opencode)\b/;
 
 function coreGuardEvent(reason: string): string {
   if (/lead freeze/i.test(reason)) return "lead-freeze";
@@ -63,8 +63,7 @@ export const ZoneGuard: Plugin = async ({ directory }) => {
           });
           throw new Error(coreDeny.reason);
         }
-        const strs = [p, ...Object.values(args)].filter((v): v is string => typeof v === "string");
-        if (strs.some((v) => PROTECTED.test(v))) {
+        if (destinationHitsProtected(args, PROTECTED)) {
           recordGuard(cwd, { event: "protected-write", tool: "zone-guard", detail: `${name} → ${p}` });
           throw new Error(
             "zone-guard: запись в protected-путь (.git/.omp/.opencode) запрещена. " +
@@ -95,7 +94,7 @@ export const ZoneGuard: Plugin = async ({ directory }) => {
         }
         if (NC_SSH.test(cmd)) throw new Error("zone-guard: nc/ssh запрещены (exfil/reverse-shell surface).");
         if (RM_RF.test(cmd)) throw new Error("zone-guard: `rm -rf` запрещён.");
-        if (PROTECTED_IN_CMD.test(cmd) && BASH_WRITE_PROTECTED.test(cmd)) {
+        if (shellTargetsProtected(cmd, PROTECTED_TOKENS)) {
           recordGuard(cwd, { event: "protected-write", tool: "zone-guard", detail: cmd.slice(0, 200) });
           throw new Error("zone-guard: shell-запись/удаление под .git/.omp/.opencode запрещена.");
         }
