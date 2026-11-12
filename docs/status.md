@@ -23,6 +23,8 @@
 | Installer vendor+rewrite (wave B, 2026-11-11) | Все flavor installers (`install`/`install-*` ps1+sh) зовут `tools/install-runtime.ts`: vendor `core/src` в dest, rewrite imports file-relative, commands abs-in-dest; OpenCode oneshot/reason overlay; Cursor included; `-Check` would-vendor |
 | Bootstrap+docs (wave C, 2026-11-11) | Bootstrap = release zip+sha256 (not clone-root); shared head AIWF_CONFIG_HOME / XDG / ~/.config/aiwf; legacy models.yml strip + modelRoles→OMP sync; all includes cursor+dsh; OpenCode rewrite-to-dest; update=re-bootstrap; uninstall=installer flag, head preserved |
 | Install shadow stdout fix (2026-11-12) | `rewrite-imports`/`vendor`/`rewrite-commands` status → stderr; bash `new_import_rewritten_shadow` redirects runtime to `>&2` so command-sub captures only shadow path (macOS rsync exit 23) |
+| Bootstrap curl\|bash stdin stamp (2026-11-12) | setup invoke `</dev/tty` or `</dev/null` so child cannot steal bootstrap pipe; STAMP_OK before cache rm; setup_roles uses /dev/tty when stdin not TTY |
+
 
 
 

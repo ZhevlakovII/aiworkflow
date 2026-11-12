@@ -12,6 +12,18 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as readline from "node:readline/promises";
 import { stdin, stdout } from "node:process";
+
+/** Open /dev/tty when present (curl|bash: stdin is the script pipe, not a TTY). */
+function openTty(): { in: fs.ReadStream; out: fs.WriteStream } | undefined {
+  try {
+    if (!fs.existsSync("/dev/tty")) return undefined;
+    const tin = fs.createReadStream("/dev/tty");
+    const tout = fs.createWriteStream("/dev/tty");
+    return { in: tin, out: tout };
+  } catch {
+    return undefined;
+  }
+}
 import {
   ROLES, parseModelRoles, listModels, modelResolves, unresolvedRoles, writeModelRoles,
   type ModelRef,
@@ -67,7 +79,10 @@ async function main(): Promise<number> {
 
   if (wantCheck) { reportIssues(current, models); return 0; }
 
-  const interactive = !wantDefaults && stdin.isTTY && stdout.isTTY;
+  // --defaults always non-interactive. Otherwise: real stdin/stdout TTY, or
+  // /dev/tty when stdin is a pipe (curl|bash) so prompts still reach the user.
+  const tty = (!wantDefaults && !(stdin.isTTY && stdout.isTTY)) ? openTty() : undefined;
+  const interactive = !wantDefaults && ((stdin.isTTY && stdout.isTTY) || !!tty);
   const next: Record<string, string> = { ...current };
 
   if (!interactive) {
@@ -83,7 +98,9 @@ async function main(): Promise<number> {
   models.forEach((m, i) => console.log("  " + (i + 1) + ") " + m.full));
   console.log("Per role: model number | Enter = keep | u = unset." + String.fromCharCode(10));
 
-  const rl = readline.createInterface({ input: stdin, output: stdout });
+  const rlIn = tty?.in ?? stdin;
+  const rlOut = tty?.out ?? stdout;
+  const rl = readline.createInterface({ input: rlIn, output: rlOut });
   try {
     for (const r of ROLES) {
       const cur = (current[r] || "").trim();
@@ -99,7 +116,7 @@ async function main(): Promise<number> {
         else { console.log("    ? unknown " + JSON.stringify(ans) + " — keeping " + suggestion); next[r] = suggestion; }
       }
     }
-  } finally { rl.close(); }
+  } finally { rl.close(); tty?.in.destroy(); tty?.out.destroy(); }
 
   persistRoles(configText, next);
   console.log(String.fromCharCode(10) + "  [written] modelRoles -> " + configPath);

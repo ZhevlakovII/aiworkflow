@@ -478,9 +478,16 @@ fi
 chmod +x "$SETUP_SH" 2>/dev/null || true
 
 echo "== running tools/setup.sh from cache =="
-# Prereq prompts still work under curl|bash when setup reads /dev/tty.
+# curl|bash feeds this script on stdin. Child setup inherits that pipe; any
+# reader (smoke, prompts, etc.) steals remaining bootstrap source so the parent
+# hits EOF before STAMP_OK=1 and the EXIT trap falsely reports stamp failure.
+# Detach setup stdin: real tty when available, else /dev/null.
 set +e
-bash "$SETUP_SH" "${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}"
+if [ -r /dev/tty ]; then
+  bash "$SETUP_SH" "${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}" </dev/tty
+else
+  bash "$SETUP_SH" "${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}" </dev/null
+fi
 rc=$?
 set -e
 if [ "$rc" -ne 0 ]; then
@@ -489,6 +496,7 @@ if [ "$rc" -ne 0 ]; then
   exit "$rc"
 fi
 
+# Mark success immediately so EXIT trap cannot fire false "stamp failed".
 STAMP_OK=1
 trap - EXIT
 
