@@ -25,6 +25,7 @@
 | Install shadow stdout fix (2026-11-12) | `rewrite-imports`/`vendor`/`rewrite-commands` status → stderr; bash `new_import_rewritten_shadow` redirects runtime to `>&2` so command-sub captures only shadow path (macOS rsync exit 23) |
 | Bootstrap curl\|bash stdin stamp (2026-11-12) | setup invoke `</dev/tty` or `</dev/null` so child cannot steal bootstrap pipe; STAMP_OK before cache rm; setup_roles uses /dev/tty when stdin not TTY |
 | PS stderr capture + roles skip (2026-11-12) | Flavor installers: `2>&1` node capture under EAP Continue, throw only on exit≠0 (NativeCommandError fix); setup_roles `s`=keep-current + `--defaults` fills only empty roles |
+| Harness-protected vendor + Enter keep (2026-11-13) | `install-runtime` vendors `tools/harness-protected.ts` + rewrites clone-relative imports under dest; `setup_roles` Enter keeps non-empty modelRoles (even NOT in models.yml); `models.yml.example` xai-oauth stub matches machine-head seed ids |
 
 
 

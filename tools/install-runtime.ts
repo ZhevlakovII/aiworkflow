@@ -8,9 +8,11 @@
 //   node tools/install-runtime.ts smoke
 //
 // Rules (one for all flavors):
-// 1. Copy core/src into dest/core/src before rewrite (+ core/package.json neighbor).
+// 1. Copy core/src into dest/core/src before rewrite (+ core/package.json neighbor),
+//    and tools/harness-protected.ts into dest/tools/harness-protected.ts.
 // 2. TS file-relative imports: replace (../)+core/src/ with rel path from that file dir
-//    to dest/core/src/. Neighbor ../lib is left alone.
+//    to dest/core/src/; also (../)+tools/harness-protected.ts -> dest/tools/….
+//    Neighbor ../lib is left alone.
 // 3. Cwd-resolved command strings: absolute path inside dest (never cache/clone).
 //    Replaces <clone> token and optional --clone-root absolute prefixes.
 
@@ -22,16 +24,23 @@ import { fileURLToPath } from "node:url";
 /** Match existing installer CORE_RE: one-or-more ../ then core/src/. */
 export const CORE_IMPORT_RE = /(?:\.\.\/)+core\/src\//g;
 
+/** Clone-layout import of shared harness helper: one-or-more ../ then tools/harness-protected.ts. */
+export const HARNESS_PROTECTED_IMPORT_RE = /(?:\.\.\/)+tools\/harness-protected\.ts/g;
+
 /** Cursor/skills token kept literal in port SRC until install rewrite. */
 export const CLONE_TOKEN = "<clone>";
 
 /** Neighbors of core/src required so node can start strip-types ESM under dest. */
 export const CORE_NEIGHBORS = ["package.json"] as const;
 
+/** Repo-root helper vendored next to dest core (SSOT stays at tools/harness-protected.ts). */
+export const HARNESS_PROTECTED_REL = "tools/harness-protected.ts";
+
 export type VendorResult = {
   destCoreSrc: string;
   copiedFiles: number;
   neighbors: string[];
+  harnessProtected: boolean;
 };
 
 export type RewriteResult = {
@@ -72,10 +81,32 @@ export function coreImportPrefix(filePath: string, dest: string): string {
   return rel;
 }
 
-/** Replace (../)+core/src/ with the per-file relative prefix. Idempotent if already correct. */
+/**
+ * Relative import path from filePath directory to dest/tools/harness-protected.ts.
+ * Always uses /. Examples:
+ *   dest/hooks/pre/x.ts     - ../../tools/harness-protected.ts
+ *   dest/plugins/x.ts       - ../tools/harness-protected.ts
+ */
+export function harnessProtectedImportPrefix(filePath: string, dest: string): string {
+  const fileDir = path.dirname(path.resolve(filePath));
+  const target = path.resolve(dest, "tools", "harness-protected.ts");
+  let rel = path.relative(fileDir, target);
+  if (!rel || rel === "") rel = "./harness-protected.ts";
+  rel = rel.split(path.sep).join("/");
+  if (!rel.startsWith(".") && !path.isAbsolute(rel)) rel = "./" + rel;
+  return rel;
+}
+
+/**
+ * Replace (../)+core/src/ and (../)+tools/harness-protected.ts with per-file
+ * dest-relative paths. Idempotent if already correct.
+ */
 export function rewriteImportsInText(text: string, filePath: string, dest: string): string {
   const prefix = coreImportPrefix(filePath, dest);
-  return text.replace(CORE_IMPORT_RE, prefix);
+  let out = text.replace(CORE_IMPORT_RE, prefix);
+  const harness = harnessProtectedImportPrefix(filePath, dest);
+  out = out.replace(HARNESS_PROTECTED_IMPORT_RE, harness);
+  return out;
 }
 
 /**
@@ -119,7 +150,10 @@ function replaceAbsPrefix(text: string, fromAbs: string, toAbs: string): string 
   return out;
 }
 
-/** Copy core/src into dest/core/src plus minimal neighbors (package.json). */
+/**
+ * Copy core/src into dest/core/src plus minimal neighbors (package.json),
+ * and tools/harness-protected.ts into dest/tools/harness-protected.ts.
+ */
 export function vendorCoreSrc(repoRoot: string, dest: string): VendorResult {
   const repo = path.resolve(repoRoot);
   const destRoot = path.resolve(dest);
@@ -139,10 +173,18 @@ export function vendorCoreSrc(repoRoot: string, dest: string): VendorResult {
     fs.copyFileSync(from, to);
     neighbors.push(name);
   }
+  const srcHarness = path.join(repo, "tools", "harness-protected.ts");
+  const dstHarness = path.join(destRoot, "tools", "harness-protected.ts");
+  if (!fs.existsSync(srcHarness) || !fs.statSync(srcHarness).isFile()) {
+    throw new Error("vendorCoreSrc: missing " + HARNESS_PROTECTED_REL + " at " + srcHarness);
+  }
+  fs.mkdirSync(path.dirname(dstHarness), { recursive: true });
+  fs.copyFileSync(srcHarness, dstHarness);
   return {
     destCoreSrc: fwdAbs(dstCore),
     copiedFiles: countFiles(dstCore),
     neighbors: neighbors,
+    harnessProtected: true,
   };
 }
 
@@ -172,7 +214,11 @@ export function rewriteImportsUnder(under: string, dest: string): RewriteResult 
     if (!IMPORT_EXTS[path.extname(file).toLowerCase()]) return;
     scanned += 1;
     const raw = fs.readFileSync(file, "utf8");
-    if (!/(?:\.\.\/)+core\/src\//.test(raw)) return;
+    // Process files with core/src and/or harness-protected imports (not core-only).
+    if (
+      !/(?:\.\.\/)+core\/src\//.test(raw) &&
+      !/(?:\.\.\/)+tools\/harness-protected\.ts/.test(raw)
+    ) return;
     const next = rewriteImportsInText(raw, file, destRoot);
     if (next !== raw) {
       const st = fs.statSync(file);
@@ -270,6 +316,10 @@ export function runSmoke(): { ok: boolean; lines: string[] } {
     check("vendor copied files", v.copiedFiles > 0, v.copiedFiles);
     check("vendor neighbor package.json", fs.existsSync(path.join(dest, "core", "package.json")));
     check("sample core entry present", fs.existsSync(path.join(dest, "core", "src", "shim", "command-hook.ts")));
+    check(
+      "vendor wrote dest/tools/harness-protected.ts",
+      v.harnessProtected && fs.existsSync(path.join(dest, "tools", "harness-protected.ts")),
+    );
 
     const libDir = path.join(dest, "lib");
     fs.mkdirSync(libDir, { recursive: true });
@@ -291,14 +341,35 @@ export function runSmoke(): { ok: boolean; lines: string[] } {
       "utf8",
     );
 
+    const hooksPreDir = path.join(dest, "hooks", "pre");
+    fs.mkdirSync(hooksPreDir, { recursive: true });
+    const harnessOnlyTs = path.join(hooksPreDir, "x.ts");
+    fs.writeFileSync(
+      harnessOnlyTs,
+      "import { destinationHitsProtected } from \"../../../../tools/harness-protected.ts\";" +
+        String.fromCharCode(10),
+      "utf8",
+    );
+
     const ri = rewriteImportsUnder(dest, dest);
-    check("rewrite-imports changed >=2 files", ri.filesChanged >= 2, ri);
+    check("rewrite-imports changed >=3 files", ri.filesChanged >= 3, ri);
     const libAfter = fs.readFileSync(sampleTs, "utf8");
     const deepAfter = fs.readFileSync(deepTs, "utf8");
+    const harnessAfter = fs.readFileSync(harnessOnlyTs, "utf8");
     check("lib import is ../core/src/", /from "\.\.\/core\/src\/shim\/command-hook\.ts"/.test(libAfter), libAfter);
     check("neighbor ../lib not rewritten", /from "\.\.\/lib\/neighbor\.ts"/.test(libAfter), libAfter);
     check("deep import is ../../core/src/", /from "\.\.\/\.\.\/core\/src\/design\/gate-lint\.ts"/.test(deepAfter), deepAfter);
     check("no leftover wrong-depth ../../../core/src/ in lib", !/from "\.\.\/\.\.\/\.\.\/core\/src\//.test(libAfter), libAfter);
+    check(
+      "hooks/pre harness import is ../../tools/harness-protected.ts",
+      /from "\.\.\/\.\.\/tools\/harness-protected\.ts"/.test(harnessAfter),
+      harnessAfter,
+    );
+    check(
+      "no leftover clone-depth ../../../../tools/harness-protected",
+      !/from "\.\.\/\.\.\/\.\.\/\.\.\/tools\/harness-protected\.ts"/.test(harnessAfter),
+      harnessAfter,
+    );
 
     const hooksPath = path.join(dest, "hooks.json");
     const destAbs = fwdAbs(dest);
@@ -338,6 +409,12 @@ export function runSmoke(): { ok: boolean; lines: string[] } {
       coreImportPrefix(path.join(dest, "hooks", "pre", "x.ts"), dest) === "../../core/src/",
       coreImportPrefix(path.join(dest, "hooks", "pre", "x.ts"), dest),
     );
+    check(
+      "harnessProtectedImportPrefix hooks/pre",
+      harnessProtectedImportPrefix(path.join(dest, "hooks", "pre", "x.ts"), dest) ===
+        "../../tools/harness-protected.ts",
+      harnessProtectedImportPrefix(path.join(dest, "hooks", "pre", "x.ts"), dest),
+    );
 
     const libMid = fs.readFileSync(sampleTs, "utf8");
     rewriteImportsUnder(path.join(dest, "lib"), dest);
@@ -371,7 +448,8 @@ function main(argv: string[]): number {
     const r = vendorCoreSrc(repo, dest as string);
     console.error(
       "[vendor] " + r.copiedFiles + " files -> " + r.destCoreSrc +
-        (r.neighbors.length ? " (neighbors: " + r.neighbors.join(", ") + ")" : ""),
+        (r.neighbors.length ? " (neighbors: " + r.neighbors.join(", ") + ")" : "") +
+        (r.harnessProtected ? " + " + HARNESS_PROTECTED_REL : ""),
     );
     return 0;
   }

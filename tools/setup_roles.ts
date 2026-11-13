@@ -97,7 +97,10 @@ async function main(): Promise<number> {
 
   console.log("Models from models.yml:");
   models.forEach((m, i) => console.log("  " + (i + 1) + ") " + m.full));
-  console.log("Per role: model number | Enter = keep | u = unset | s = skip." + String.fromCharCode(10));
+  console.log(
+    "Per role: model number | Enter = keep current if set, else suggestion | u = unset | s = skip." +
+      String.fromCharCode(10),
+  );
 
   const rlIn = tty?.in ?? stdin;
   const rlOut = tty?.out ?? stdout;
@@ -109,7 +112,8 @@ async function main(): Promise<number> {
       const suggestion = curOk ? cur : defModel;
       const label = cur ? (curOk ? cur : cur + " (NOT in models.yml)") : "(unset)";
       const ans = (await rl.question("  " + r + " [current: " + label + "] -> suggest " + suggestion + ": ")).trim();
-      if (ans === "") { next[r] = curOk ? cur : suggestion; }
+      // Enter: keep non-empty current even when NOT in models.yml; empty → suggestion.
+      if (ans === "") { next[r] = cur ? cur : suggestion; }
       else if (ans.toLowerCase() === "u") { next[r] = ""; }
       else if (ans.toLowerCase() === "s") { next[r] = cur; }
       else {

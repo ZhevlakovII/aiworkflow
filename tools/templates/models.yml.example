@@ -26,6 +26,31 @@ providers:
         contextWindow: 131072            # EDIT: match the context loaded in LM Studio
         maxTokens: 16384
         maxSubagents: 1                  # local single-slot → очередь не параллелит эту модель
+  # xAI OAuth (Composer / Grok) — ids match machine-head.yml.example seed modelRoles.
+  # Auth via OMP `/login` (not a local baseUrl). Keep so binders/--check resolve seeded roles.
+  xai-oauth:
+    # baseUrl: not local — use omp /login for OAuth
+    api: openai-completions
+    auth: login
+    models:
+      - id: grok-composer-2.5-fast
+        name: xAI Composer 2.5 Fast (OAuth)
+        api: openai-completions
+        reasoning: false
+        input: [text]
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+        contextWindow: 131072
+        maxTokens: 16384
+        maxSubagents: 4
+      - id: grok-4.7
+        name: xAI Grok 4.7 (OAuth)
+        api: openai-completions
+        reasoning: true
+        input: [text]
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+        contextWindow: 131072
+        maxTokens: 16384
+        maxSubagents: 4
   # Пример удалённого провайдера с бОльшим параллелизмом (раскомментируй/поправь под свой ключ):
   # deepseek:
   #   baseUrl: https://api.deepseek.com/v1
