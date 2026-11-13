@@ -14,6 +14,7 @@ import {
   resolveContractKey,
   type StageJournalEvent,
 } from "../../../core/src/stage/journal.ts";
+import { isSpecRoadmapGeneration } from "../../../core/src/design/generation.ts";
 
 const STEPS = ["begin", "gate", "critic-record", "lock"] as const;
 type Step = (typeof STEPS)[number];
@@ -104,16 +105,21 @@ const factory: CustomToolFactory = (pi) => {
       if (!key.ok) return err(key.error);
       const ck12 = key.ck12;
 
+      const newGen = isSpecRoadmapGeneration(taskText);
+
       if (step === "begin") {
         const r = runJudgeCli(["design-begin", "--task", taskRel], deps);
         if (r.exitCode !== 0) return judgeToTool(r);
+        const artifactLines = newGen
+          ? `  spec → ${arts.specRel}\n` +
+            `  (no product ADR — generation=spec-roadmap; roadmap is a later stage)\n`
+          : `  spec → ${arts.specRel}\n` + `  ADR  → ${arts.adrRel}\n`;
         const handoff =
           `=== DESIGN SESSION begin: ${tid} (ck12=${ck12}) ===\n` +
           `${r.stdout}\n\n` +
           `Producer handoff (spawn native producer; Write only these):\n` +
           `  task: ${taskRel}\n` +
-          `  spec → ${arts.specRel}\n` +
-          `  ADR  → ${arts.adrRel}\n` +
+          artifactLines +
           `Next: after producer writes artifacts → design_session(step=gate, task=...).`;
         return ok(handoff);
       }
@@ -121,7 +127,12 @@ const factory: CustomToolFactory = (pi) => {
       if (step === "gate") {
         const specPath = path.resolve(pi.cwd, arts.specRel);
         const adrPath = path.resolve(pi.cwd, arts.adrRel);
-        if (!fs.existsSync(specPath) || !fs.existsSync(adrPath)) {
+        if (!fs.existsSync(specPath)) {
+          return err(
+            `gate: нет spec producer'а (${arts.specRel}). Сначала spawn producer.`,
+          );
+        }
+        if (!newGen && !fs.existsSync(adrPath)) {
           return err(
             `gate: нет артефактов producer'а (${arts.specRel}, ${arts.adrRel}). ` +
               `Сначала spawn producer.`,
@@ -129,7 +140,9 @@ const factory: CustomToolFactory = (pi) => {
         }
         const eventsBefore = readJournal(pi.cwd, ck12, "design");
         const priorBounces = countGateBounces(eventsBefore);
-        const g = gateLint(taskPath, specPath, adrPath, pi.cwd);
+        const g = newGen
+          ? gateLint(taskPath, specPath, null, pi.cwd, { generation: "spec-roadmap" })
+          : gateLint(taskPath, specPath, adrPath, pi.cwd);
         const verdict = g.findings.length ? "BOUNCE" : "PASS";
         const summary =
           `SP:${g.nSp} AD:${g.nAd} FR:${g.nFr} findings:${g.findings.length}\n` +

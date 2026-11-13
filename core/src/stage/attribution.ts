@@ -309,20 +309,37 @@ export function evaluateStagedAttribution(options: {
       }
     }
 
-    // Gate recount once per ck12 when task + both artifacts exist.
-    if (owner.taskRel && owner.spec && owner.adr && !gateDone.has(owner.ck12)) {
+    // Gate recount once per ck12 when task + artifacts exist.
+    if (owner.taskRel && owner.spec && !gateDone.has(owner.ck12)) {
       const taskAbs = path.join(options.repoRoot, owner.taskRel);
       const specAbs = path.join(options.repoRoot, owner.spec);
-      const adrAbs = path.join(options.repoRoot, owner.adr);
-      if (fs.exists(taskAbs) && fs.exists(specAbs) && fs.exists(adrAbs)) {
+      if (!fs.exists(taskAbs) || !fs.exists(specAbs)) {
+        // skip recount until files present
+      } else if (!owner.adr) {
+        // spec-roadmap lock: recount source↔spec only
         gateDone.add(owner.ck12);
-        const g = gateLint(taskAbs, specAbs, adrAbs, options.repoRoot);
+        const g = gateLint(taskAbs, specAbs, null, options.repoRoot, {
+          generation: "spec-roadmap",
+        });
         if (g.findings.length > 0) {
           return {
             ok: false,
             status: "attribution-denied",
             detail: `${rel}: gate recount (${g.findings.length}): ${g.findings.join("; ")}`,
           };
+        }
+      } else {
+        const adrAbs = path.join(options.repoRoot, owner.adr);
+        if (fs.exists(adrAbs)) {
+          gateDone.add(owner.ck12);
+          const g = gateLint(taskAbs, specAbs, adrAbs, options.repoRoot);
+          if (g.findings.length > 0) {
+            return {
+              ok: false,
+              status: "attribution-denied",
+              detail: `${rel}: gate recount (${g.findings.length}): ${g.findings.join("; ")}`,
+            };
+          }
         }
       }
     }

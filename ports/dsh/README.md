@@ -14,7 +14,8 @@ DeepSeek Harness mounts this package via profile `cordis.patch.yml`. **No** root
 | Tool | Role |
 |------|------|
 | `gated_commit` / `gated_push` / `gated_merge` | L1–L3 git rails |
-| `design_session` / `scaffold_session` / `execute_session` | Stage drivers |
+| `design_session` / `roadmap_session` / `execute_session` | Stage drivers (default spine) |
+| `scaffold_session` | Legacy only; refuse on `spec-roadmap` |
 | `code_search` / `outline` / `callers` | ast-index discovery |
 | `plan` / `synthesize` / `archive_spec` | P2 one-shot + living spec (see gaps below) |
 | `hooks/pre/zone-guard` | pre-execute deny |

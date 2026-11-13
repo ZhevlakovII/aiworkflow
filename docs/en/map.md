@@ -6,8 +6,8 @@ Product tree for AI Workflow (harness-neutral SDLC layer).
 |------|------|
 | `canon/` | Roles SSOT (+ example `zonemap.yml`, not seeded; `delegation` skeleton). Roles → port agents at install/render. |
 | `core/` | Engine: rails L1–L3, judge/stage, gate-lint, render, command-hook / zone guards. |
-| `tools/` | Installers, adapters (`tools/adapters/<client>.yml`), setup/bootstrap, templates. |
-| `ports/<client>/` | **Port SRC SSOT** (omp, cursor, opencode, claude, …). Not a live harness root in this repo. |
+| `tools/` | Node CLI `tools/aiwf.ts` + `tools/install/**`, thin setup/bootstrap shells, adapters, templates. |
+| `ports/<client>/` | **Port SRC SSOT** (omp, cursor, opencode, dsh; `ports/claude/` may remain unused). Not a live harness root in this repo. |
 | `.workflow/` | Tasks (immutable contracts), ledger, stage journals, active-zone (runtime). |
 
 ## Install destinations
@@ -21,10 +21,13 @@ Project overlays (optional filled `zonemap.yml` / `delegation.yml`, custom agent
 
 - Shared head (models/modelRoles): `AIWF_CONFIG_HOME` → `$XDG_CONFIG_HOME/aiwf` → `~/.config/aiwf`.
 - Install dest (each flavor) vendors `core/src` at `<dest>/core/src`; bootstrap cache and `~/.aiworkflow` are not runtime roots.
-- Default flow `all` includes cursor + dsh (same as setup).
+- Live installer flavors: `omp` | `opencode` | `cursor` | `dsh` (preset `all`). Modes: `full` | `key` | `soft` | `yolo`. No `claude`/`codex`/`both` in installer UX.
+- Uninstall = managed flavor trees only; shared head never purged.
 ## Macro path
 
-Default: `classify → design? → execute → gate → report`. Full stage catalog (7) and plan/scaffold opt-in — `docs/en/keys.md`.
+Roles: producer · critic · explorer · **roadmapper** · executor (`scaffolder` legacy).
+
+Default: `classify → design(spec) → roadmap → execute → gate → report`. Catalog (no plan/scaffold as stages) and `generation: spec-roadmap` marker — `docs/en/keys.md`.
 
 ## Live docs
 

@@ -11,6 +11,7 @@ import { nodeGitSeam } from "../../../core/src/rails/git-seam.ts";
 import { runJudgeCli, type JudgeCliDeps } from "../../../core/src/stage/judge-cli.ts";
 import { resolveContractKey } from "../../../core/src/stage/journal.ts";
 import { scaffoldOptInFromTaskText } from "../../../core/src/design/critic-opt-in.ts";
+import { isSpecRoadmapGeneration } from "../../../core/src/design/generation.ts";
 
 const STEPS = ["begin", "check", "done"] as const;
 type Step = (typeof STEPS)[number];
@@ -113,6 +114,12 @@ const factory: CustomToolFactory = (pi) => {
         return err(
           `MISROUTE: scaffold_session на не-scaffold задаче (stage=${stage || "<none>"}). ` +
             `Только stage:scaffold* (не design*/execute*).`,
+        );
+      }
+      if (isSpecRoadmapGeneration(taskText)) {
+        return err(
+          "scaffold_session refused: generation=spec-roadmap " +
+            "(scaffold retired; use roadmap_session + roadmapper)",
         );
       }
       const taskRel = path.relative(pi.cwd, taskPath).split(path.sep).join("/");

@@ -8,20 +8,22 @@ Short locks only. Archaeology → `docs/archive/` (local-canon only; not part of
 
 ## Macro flow
 
-**Default:** `classify → design? → execute → gate → report` (design for non-trivial; `trivial` may skip design).
+**Default:** `classify → design(spec) → roadmap → execute → gate → report` (design+roadmap for non-trivial; `trivial` may skip design where class policy already allows).
 
-**Stage catalog (7):** classify · design · plan · scaffold · execute · gate · report. Plan and scaffold remain named stages, **default off**, opt-in via task lever (`plan`/`plan-opt-in`, `scaffold`/`scaffold-opt-in`).
+**Stage catalog:** classify · design · roadmap · execute · gate · report. Names `plan` / `scaffold` are **not** catalog stages. Critic remains opt-in (`critic`/`critic-opt-in`). Plan tool = non-gate utility.
+
+**Generation marker:** `generation: spec-roadmap` = new path (spec + roadmap, no product ADR). Absent / `generation: sp-adr` = legacy dual SP+ADR (+ optional scaffold lever). Exclusive path per contract — no mixed axes.
 
 - Lead orchestrates; does not produce production code/content.
-- Session drivers: `design_session` / `execute_session`; `scaffold_session` only when scaffold is on. Judge/journal in `core/src/stage/` (shared ck12: strip id/supersedes/stage + `binds` to the design task).
-- Mechanical design gate = `gate-lint` / judge — red ≠ PASS.
+- Session drivers: `design_session` / `roadmap_session` / `execute_session`; `scaffold_session` only for legacy + scaffold on. Judge/journal in `core/src/stage/` (shared ck12: strip id/supersedes/stage + `binds`; stage `roadmap`).
+- Mechanical design gate = `gate-lint` / judge — red ≠ PASS. New-gen second axis = spec↔roadmap (`ac`/`phase` covers).
 - Task-file (`.workflow/tasks/<id>.md`) is the immutable contract.
 
 ## Roles
 
 Canon text: `canon/roles/` → rendered into port `agents/` at install.
 
-producer · critic · explorer · scaffolder · executor (five base roles). Domain agent is not canon: consumer overlay + a filled project zonemap entry.
+producer · critic · explorer · roadmapper · executor. `scaffolder` retired on `spec-roadmap` (legacy only). Domain agent is not canon: consumer overlay + a filled project zonemap entry.
 
 Execute resolve: missing map / empty / unmatched / denied / ambiguous → `executor`; single match → map name. Project rules on `executor` (and any domain actor) beat generic idioms. Produce ≠ decide: worker produces; critic finds; **lead locks**.
 
@@ -50,15 +52,17 @@ Raw `git commit|push|merge|reset|…` denied by hook. Use rail CLI / gated tools
 
 ## Ports
 
-| Client | SRC | Consumer dest |
-|--------|-----|----------------|
-| omp | `ports/omp/` | `.omp/` or `~/.omp/agent` |
-| cursor | `ports/cursor/` | `.cursor/` / `~/.cursor` |
-| opencode | `ports/opencode/` | `.opencode/` (+ root `opencode.json`) |
-| dsh | `ports/dsh/` | profile `~/.dsh/profiles/<profile>/plugins/aiwf/` + project `.dsh-aiwf/` |
-| claude | `ports/claude/` | `.claude/` / `~/.claude` |
+| Client | SRC | Consumer dest | Installer |
+|--------|-----|----------------|-----------|
+| omp | `ports/omp/` | `.omp/` or `~/.omp/agent` | live |
+| cursor | `ports/cursor/` | `.cursor/` / `~/.cursor` | live |
+| opencode | `ports/opencode/` | `.opencode/` (+ root `opencode.json`) | live |
+| dsh | `ports/dsh/` | profile `~/.dsh/profiles/<profile>/plugins/aiwf/` + project `.dsh-aiwf/` | live |
+| claude | `ports/claude/` | (unused by installer) | **not** in UX |
 
-**DSH P1 (2026-11-09):** `gated_merge`, `code_search`/`outline`/`callers` (ast-index), `hooks/dsh-telemetry.ts`, `delegation.yml` seed, `setup.sh -Flow all` includes dsh.
+**Installer CLI (2026-11-13):** primary `node tools/aiwf.ts` (`setup` | `install` | `uninstall` | `head`); modes `full|key|soft|yolo`; soft never overwrites existing shared head; uninstall never touches `~/.config/aiwf`. Rejected flows: `claude` | `codex` | `both`.
+
+**DSH P1 (2026-11-09):** `gated_merge`, `code_search`/`outline`/`callers` (ast-index), `hooks/dsh-telemetry.ts`, `delegation.yml` seed, setup `--flow all` includes dsh.
 
 **DSH P2 (2026-11-09):** `plan`/`synthesize`/`archive_spec`, queue-runner (`DSH_QUEUE`/`AIWF_QUEUE`, best-effort inject), WATCHDOG (doc-only), fan-out unsupported.
 
@@ -87,7 +91,7 @@ Does not delete existing `~/.aiworkflow`. Dest is self-contained with vendored `
 
 ### Flow membership
 
-`omp|claude|opencode|cursor|dsh|all|both`. Default `all` **includes cursor + dsh**. `both` excludes them.
+`omp|opencode|cursor|dsh|all`. Default `all` = four live flavors. `claude` / `codex` / `both` retired from installer UX.
 Harness CLI soft-optional on multi-flow (solo flow hard for that flow).
 
 ### Path rewrite (all flavors incl OpenCode)

@@ -1,9 +1,13 @@
 ---
 name: aiwf-scaffold
-description: Scaffold stage — judge begin → scaffolder in zone → check → done → rail commit
+description: Scaffold stage — legacy + scaffold lever only; new work uses aiwf-roadmap
 ---
 
-1. Read task-file (`allow`, DoD). Task id = basename without `.md`.
+**Retired from default spine.** For `generation: spec-roadmap` use skill `aiwf-roadmap` instead.
+
+This skill remains for **legacy** `generation: sp-adr` (or absent) **with** scaffold lever on only.
+
+1. Read task-file (`allow`, DoD). Task id = basename without `.md`. Refuse if generation is `spec-roadmap`.
 2. Judge begin:
    ```
    node "<clone>/core/src/stage/judge-cli.ts" scaffold-begin --task <task-file>

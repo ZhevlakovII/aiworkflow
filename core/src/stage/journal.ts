@@ -11,8 +11,10 @@
  *   - Without `binds`: hash this file after strip.
  *
  * Stages: `design` (B1: design-begin/gate/critic/lock); `scaffold`
- * (`scaffold-started`, `scaffold-done` with outcome ok|violation);
- * `execute` (B2b: `exec-started`, `exec-done` with outcome ok|violation).
+ * (`scaffold-started`, `scaffold-done` with outcome ok|violation — legacy);
+ * `roadmap` (`roadmap-started`, `roadmap-done` with outcome ok|violation —
+ *   generation spec-roadmap); `execute` (B2b: `exec-started`, `exec-done`
+ *   with outcome ok|violation).
  *
  * Convention: only the judge module writes; these helpers are pure fs
  * functions exported for that use (and tests).

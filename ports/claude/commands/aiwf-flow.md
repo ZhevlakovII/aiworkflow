@@ -1,5 +1,5 @@
 ---
-description: Полный флоу: classify→design→plan→execute→gate→report (оркеструет стадии-команды/субагентов)
+description: Полный флоу: classify→design(spec)→roadmap→execute→gate→report (оркеструет стадии-команды/субагентов)
 argument-hint: <task-file | описание задачи>
 allowed-tools: Bash, Read, Grep, Glob, Task
 ---
@@ -9,14 +9,16 @@ allowed-tools: Bash, Read, Grep, Glob, Task
 Вход: `$ARGUMENTS`
 
 ## Стадии
-`classify → design → plan → execute → gate → report`
+`classify → design(spec) → roadmap → execute → gate → report` (`generation: spec-roadmap`)
 
-1. **classify** — определи класс: `trivial` (без design) | `feature` (лёгкий design) | `refactor` | `security`/`migration` (critic обязателен + rollback). Класс задаёт подмножество стадий и blast-radius.
-2. **design** (кроме trivial) — `/aiwf-design <task-file>`. Детерминир. драйвер (producer→gate_lint→critic→ledger→gated_commit). Locked только при gate PASS + нет blocker/major. Не PASS на глаз.
-3. **plan** — нарежь работу по зонам (allow-глобы на worker). Один домен в зоне → домен-агент; несколько → раздели или generic executor.
-4. **execute** — `/aiwf-execute <task-file>` на каждую зону (subagent в зоне → gated_commit zone-check). Fan-out параллельно при независимых зонах.
-5. **gate** — impl-гейт (тесты/lint/build по проекту) — резолвится L1-рельсом (`/aiwf-commit`, `core/src/rails/cli.ts`) внутри execute-стадии: `test-cmd` активной задачи, иначе `policy.quality_gate.cmd`; `--gate`-оверрайд при активной worker-зоне запрещён. Design-гейт был в design-стадии. Красный → bounce, не лочь.
-6. **report** — сводка: класс, вердикт design-гейта, зоны/коммиты, критические findings, что осталось.
+1. **classify** — определи класс: `trivial` (без design) | `feature` | `refactor` | `security`/`migration`. Класс задаёт подмножество стадий и blast-radius.
+2. **design** (кроме trivial) — `/aiwf-design <task-file>`. На `spec-roadmap` — product spec only (без product ADR). Locked только при gate PASS + нет blocker/major. Не PASS на глаз.
+3. **roadmap** — spawn `roadmapper` после design-lock (phases/AC/tests bound к spec). Между design и execute.
+4. **execute** — `/aiwf-execute <task-file>` на каждую зону; consume locked roadmap DoD/AC (не переписывай на twin).
+5. **gate** — impl-гейт через L1-рельс; design-гейт был в design; second axis = spec↔roadmap.
+6. **report** — сводка: класс, вердикт, зоны/коммиты, findings, остаток.
+
+**Legacy:** plan/scaffold не в каталоге; scaffold только для `sp-adr` + lever.
 
 ## Инварианты (HARD)
 - Task-file — иммутабельный источник контракта. Не переинтерпретируй.
@@ -25,4 +27,3 @@ allowed-tools: Bash, Read, Grep, Glob, Task
 - Не микроменеджь воркеров: авто-доставка на yield, работай по return.
 - Enforcement на коммите: `gated_commit` zone-check держит зону независимо от того, кто писал.
 - Коммит/push/merge — ТОЛЬКО рельсы (`/aiwf-commit /aiwf-push /aiwf-merge`), raw git блокирует hook.
-- security/migration: critic обязателен; L3-merge запрещён без `--allow-risky`.

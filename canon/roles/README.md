@@ -4,14 +4,14 @@
 AD-canon-dir-layout.
 
 **Подключено к рантайму (T-canon-single-source).** Это ЕДИНСТВЕННЫЙ
-источник role-defs: пять базовых ролей — `producer`, `critic`, `explorer`,
-`scaffolder`, `executor`. Доменный исполнитель **не** в каноне: только
+источник role-defs: базовые роли — `producer`, `critic`, `explorer`,
+`roadmapper`, `executor`; `scaffolder` — **retired** на `generation: spec-roadmap`
+(файл остаётся для legacy + scaffold lever). Доменный исполнитель **не** в каноне: только
 consumer overlay (`<project>/<port>/agents/<name>.md`) **вместе** с записью
 заполненной project zonemap, которая называет этого агента. Оверлей без
 карты execute не перехватывает; без файла карты / пустая карта / miss /
-deny / ambiguous → `executor`. `scaffolder` — только стадия scaffold
-(каркас); reuse `executor` и любого доменного/потребительского execute-актора
-на scaffold запрещён prose роли и scaffold ADR.
+deny / ambiguous → `executor`. `roadmapper` — только стадия roadmap (acceptance TZ);
+`scaffolder` на новом пути не spawnable.
 Frontmatter и тело — нейтральные: без имён инструментов/провайдеров, без
 проектных путей/имён. Портовые различия (frontmatter-формат, tool-имена,
 ambient-ignore/discovery/zone-guard/commit-rail формулировки) — НЕ в этих

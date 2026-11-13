@@ -1,32 +1,27 @@
 # AI Workflow
 
 Дисциплинированный SDLC-слой: контракт-ориентированный флоу с детерминированными рельсами
-и лестницей автономии L1→L3. Один флоу, **три подложки (flavor)**:
+и лестницей автономии L1→L3. Один флоу, **четыре live flavor** (installer):
 - **OMP** ([oh-my-pi](https://omp.sh)) — конфиг + нативные тулы + хуки + роли внутри OMP.
-- **Claude Code** — субагенты (`.claude/agents/`) + slash-команды (`.claude/commands/`) +
-  enforcement-хуки. Port source: `ports/claude/` → installer stamps consumer `.<client>/`.
-- **OpenCode** ([sst/opencode](https://opencode.ai), в т.ч. Desktop) — TS-нативные тулы (`.opencode/tools/`) +
-  плагины (`.opencode/plugins/`, `tool.execute.before/after`) + субагенты + slash-команды. Ближе к OMP-оригиналу
-  (оба TS/Bun-native). Port source: `ports/opencode/` (+ `opencode.json`) → installer stamps consumer `.opencode/` + root `opencode.json`.
+- **OpenCode** ([sst/opencode](https://opencode.ai)) — TS tools/plugins + agents + slash-команды.
+- **Cursor** — agents + skills + hooks.json.
+- **DSH** — Cordis plugin + `.dsh-aiwf` overlay.
 
-Карта / статус / ключи (RU): [`docs/map.md`](docs/map.md) · [`docs/status.md`](docs/status.md) · [`docs/keys.md`](docs/keys.md). EN → [`docs/en/`](docs/en/). Исторические design/research остаются в локальном (private) каноне, не в публичном installable-дереве.
+Карта / статус / ключи (RU): [`docs/map.md`](docs/map.md) · [`docs/status.md`](docs/status.md) · [`docs/keys.md`](docs/keys.md). EN → [`docs/en/`](docs/en/).
 
-Выбор инсталлером: `--flow omp|claude|opencode|cursor|dsh|all|both` (дефолт `all` = omp+claude+opencode+cursor+dsh; `both` = omp+claude+opencode без cursor/dsh). В этом репо **нет** live dogfood `.<client>/` — installer SRC под `ports/`; installers stamp consumer. У opencode флоу идёт **без команды** (always-on AGENTS.md) или явными /aiwf-* командами.
+Первичный CLI: `node tools/aiwf.ts` (`setup` | `install` | `uninstall` | `head`).
+Flow: `--flow omp|opencode|cursor|dsh|all`. Modes: `full|key|soft|yolo` (`-y` → yolo).
+`claude` / `codex` / `both` — вне installer UX (`ports/claude/` может оставаться unused).
 
 ## Установка (одна команда)
 
-Раскатка mac/linux/windows. Bootstrap **качает** release zip + sha256 (не клонирует `~/.aiworkflow` как runtime root),
-verify → extract cache → setup from cache → delete cache **only on success** (fail: retain + print path).
-Dest получает vendored `<dest>/core/src`. Shared head: `AIWF_CONFIG_HOME` → `$XDG_CONFIG_HOME/aiwf` → `~/.config/aiwf`.
-
-Flow: `--flow omp|claude|opencode|cursor|dsh|all|both`. Дефолт `all` = omp+claude+opencode+**cursor**+**dsh**.
-`both` = omp+claude+opencode (без cursor/dsh). Harness CLI soft-optional на multi-flow.
+Bootstrap: download zip+sha256 → verify → extract cache → `node tools/aiwf.ts setup` → delete cache on success.
+Shared head: `AIWF_CONFIG_HOME` → `$XDG_CONFIG_HOME/aiwf` → `~/.config/aiwf` (uninstall never touches it).
 
 **macOS / Linux:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ZhevlakovII/aiworkflow/main/bootstrap.sh | bash
-# non-interactive:
-curl -fsSL .../bootstrap.sh | bash -s -- --yes
+curl -fsSL .../bootstrap.sh | bash -s -- --yes --flow all
 ```
 
 **Windows (PowerShell):**
@@ -34,19 +29,12 @@ curl -fsSL .../bootstrap.sh | bash -s -- --yes
 irm https://raw.githubusercontent.com/ZhevlakovII/aiworkflow/main/bootstrap.ps1 | iex
 $b = irm https://raw.githubusercontent.com/ZhevlakovII/aiworkflow/main/bootstrap.ps1
 & ([scriptblock]::Create($b)) -Yes
-& ([scriptblock]::Create($b)) -Flow all
+& ([scriptblock]::Create($b)) -Flow all -Mode yolo
 ```
 
-**Только Claude Code:** `--flow claude` / `-Flow claude` (после — рестарт сессии CC).
+Checkout: `node tools/aiwf.ts setup --mode yolo` / `tools/setup.ps1 -Yes` / `bash tools/setup.sh --yes`.
+Dry-run: `node tools/aiwf.ts setup --mode yolo --check`. Детали — [INSTALL.md](INSTALL.md).
 
-**Только OpenCode:** `--flow opencode` / `-Flow opencode`.
-
-**Cursor / DSH:** `-Flow cursor` / `-Flow dsh` (входят в default all).
-
-Уже есть checkout SRC? `bash tools/setup.sh` / `tools/setup.ps1` (`--check`, `--flow`).
-Update = re-bootstrap (head preserved). Детали — [INSTALL.md](INSTALL.md).
-
-Ставит выбором: omp (upstream), ast-index, node/git/java (pkg-mgr), codex (npm). claude — руками (хинт).
 ## Цель
 
 Дать агентам SDLC-дисциплину, которую не даёт ни один харнесс из коробки:

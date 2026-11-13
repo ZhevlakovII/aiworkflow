@@ -7,7 +7,9 @@
 | Область | Состояние |
 |---------|-----------|
 | Ports-as-SRC | `ports/<client>/` = SRC инсталлера; нет root dogfood `.omp` / `.cursor` |
-| Стадия scaffold | **opt-in** (default off); judge `scaffold-*` + роль `scaffolder` when on; `scaffold_session` OMP; execute-begin не требует scaffold-done если off |
+| Стадия scaffold | **retired** на `generation: spec-roadmap`; legacy + lever only; `scaffolder` не default mid |
+| Стадия roadmap (Phase 1, 2026-11-13) | Named judge stage; `roadmap-begin`/`done`; `roadmap_session` + `roadmapper`; execute-begin требует roadmap-done на new gen; gate second axis spec↔roadmap |
+| Generation cutover | Exclusive `generation: spec-roadmap` vs absent/`sp-adr`; design-lock без product ADR на new gen |
 | Session write protected (SWP) | command-hook: deny Write/Edit на защищённые stage-пути |
 | Lead freeze (execute-open) | заморозка правок operator, пока открыта стадия execute |
 | Маркер `by:judge` | mutual exclusion: begin без legacy-зоны; grants apply на входе judge |
@@ -16,8 +18,8 @@
 | Design C B-track | `design_session` / `execute_session` + judge + attribution fail-closed (OMP) |
 | Domain roles collapse (phase 1) | Шесть `*-developer` убраны из канона; default execute = `executor`; zonemap optional, not seeded (2026-11-09) |
 | Flow opt-in + contract-key | plan/scaffold default off; ck12 strip id/supersedes/stage + binds; judge stage MISROUTE parity (2026-11-09) |
-| Domain roles collapse (phase 2) | `ports/*/agents` регенерированы рендером (base five); domain md удалены; drift test сверяет committed ports (2026-11-09) |
-| Global rollout + Composer seed (2026-11-10) | Global OMP/Cursor/DSH reinstall (base five); public `origin/main` republished; `smol`/seed cheap-default = xAI Composer (не local Qwen); matrix 4.7 на producer/slow/scaffolder |
+| Domain roles collapse (phase 2) | `ports/*/agents` регенерированы рендером (live five + roadmapper + scaffolder legacy); domain md удалены; drift test сверяет committed ports (2026-11-09) |
+| Global rollout + Composer seed (2026-11-10) | Global OMP/Cursor/DSH reinstall (live five + roadmapper); public `origin/main` republished; `smol`/seed cheap-default = xAI Composer (не local Qwen); matrix 4.7 на producer/slow/scaffolder |
 | Cursor model_map ↔ OMP (2026-11-10) | tools/adapters/cursor.yml: composer-2.5-fast / grok-4.7-high-fast (не sonnet/opus); global Cursor reinstall |
 | plan/synthesize/archive defaults (2026-11-10) | `resolveStrongModel` from live OMP modelRoles (producer→slow→default); OpenCode oneshot → omp -p |
 | Installer vendor+rewrite (wave B, 2026-11-11) | Все flavor installers (`install`/`install-*` ps1+sh) зовут `tools/install-runtime.ts`: vendor `core/src` в dest, rewrite imports file-relative, commands abs-in-dest; OpenCode oneshot/reason overlay; Cursor included; `-Check` would-vendor |

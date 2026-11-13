@@ -22,6 +22,7 @@ content:
         "@producer": "grok-4.7-high-fast"
         "@explorer": "composer-2.5-fast"
         "@scaffolder": "grok-4.7-high-fast"
+        "@roadmapper": "grok-4.7-high-fast"
       tool_map:
         read: "Read"
         grep: "Grep"
@@ -49,17 +50,20 @@ content:
     project-conventions-file: "AGENTS.md/CLAUDE.md"
     description-suffix-executor: " Default execute agent when zone does not resolve a domain."
     description-suffix-scaffolder: " Invoke on scaffold stage only (paths/signatures/stub tests/DoD)."
+    description-suffix-roadmapper: " Invoke on roadmap stage only (AC/phase TZ)."
     description-suffix-critic: " Invoke on design/audit stage."
     description-suffix-explorer: " Invoke before design/execute to ground the contract."
     description-suffix-producer: " Invoke on design stage."
     ambient-note-executor: "Игнорируй ambient-правила окружения — следуй только этой инструкции и контракту."
     ambient-note-scaffolder: "Игнорируй ambient-правила окружения — следуй только этой инструкции и контракту."
+    ambient-note-roadmapper: "Игнорируй ambient-правила окружения — следуй только этой инструкции и контракту."
     ambient-note-critic: "Игнорируй ambient-правила окружения — следуй только этой инструкции и переданным артефактам."
     ambient-note-explorer: "Игнорируй ambient-правила окружения — следуй только этой инструкции."
     ambient-note-producer: "Игнорируй любые ambient-правила окружения — следуй ТОЛЬКО этой инструкции и локнутому task-file."
     discovery-note: "**Discovery через `ast-index` (Shell), не mass-grep:** `ast-index class/symbol/outline/callers/usages`."
     discovery-note-executor: "**Discovery через `ast-index` (Shell), не mass-grep:** `ast-index class/symbol/outline/callers/usages`."
     discovery-note-scaffolder: "**Discovery через `ast-index` (Shell), не mass-grep:** `ast-index class/symbol/outline/callers/usages`."
+    discovery-note-roadmapper: "**Discovery через `ast-index` (Shell), не mass-grep:** `ast-index class/symbol/outline/callers/usages`."
     discovery-note-explorer: "**Discovery через `ast-index` (CLI через Shell) — ДЕФОЛТ, не mass-grep:** `ast-index search/class/symbol/usages/callers/implementations/outline/deps/api`. Перед чтением файла >500 строк — сначала `ast-index outline <file>`, читать точечно. grep — fallback там, где ast-index не покрывает."
 machine_seed:
   template: null

@@ -1,7 +1,7 @@
 /**
  * core/test/canon-render-drift.test.ts — domain collapse:
- * phase-1: render(canon) emits five base roles only.
- * phase-2: committed ports/<client>/agents match render for base five and
+ * phase-1: render(canon) emits live five + scaffolder legacy (base six).
+ * phase-2: committed ports/<client>/agents match render for base six and
  * contain zero *-developer.md (non-canon port-only agents like OpenCode
  * aiwf.md are allowed extras).
  * Second test keeps render-never-writes-project-config invariant.
@@ -30,7 +30,8 @@ const PORT_CLIENTS: readonly { port: string; renderDir: string }[] = [
   { port: "dsh", renderDir: ".dsh-aiwf" },
 ];
 
-const BASE_ROLES = ["critic", "executor", "explorer", "producer", "scaffolder"] as const;
+/** Live five + scaffolder legacy (canon role files must match). */
+const BASE_ROLES = ["critic", "executor", "explorer", "producer", "roadmapper", "scaffolder"] as const;
 const DOMAIN_GONE = [
   "go-developer",
   "gradle-developer",
@@ -52,7 +53,7 @@ function makeTmp(): string {
   return mkdtempSync(nodePath.join(tmpdir(), "aiwf-canon-drift-"));
 }
 
-test("canon-render-drift: render(canon) emits five base roles only (phase-1; port trees phase-2)", (t) => {
+test("canon-render-drift: render(canon) emits live five + scaffolder legacy (base six; port trees phase-2)", (t) => {
   const tmp = makeTmp();
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
 
@@ -98,7 +99,7 @@ test("canon-render-drift: render(canon) emits five base roles only (phase-1; por
   }
 });
 
-test("canon-render-drift: committed ports/*/agents match render base five; zero domain md (phase-2)", (t) => {
+test("canon-render-drift: committed ports/*/agents match render base six; zero domain md (phase-2)", (t) => {
   const tmp = makeTmp();
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
 

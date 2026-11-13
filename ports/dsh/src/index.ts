@@ -7,6 +7,7 @@ import { registerGatedCommit } from "../tools/commit.ts";
 import { registerGatedPush } from "../tools/push.ts";
 import { registerDesignSession } from "../tools/design_session.ts";
 import { registerScaffoldSession } from "../tools/scaffold_session.ts";
+import { registerRoadmapSession } from "../tools/roadmap_session.ts";
 import { registerExecuteSession } from "../tools/execute_session.ts";
 import { registerGatedMerge } from "../tools/merge.ts";
 import { registerCodeSearch } from "../tools/code_search.ts";
@@ -30,6 +31,7 @@ export default function activate(ctx: CordisContext): void {
   registerGatedMerge(ctx);
   registerDesignSession(ctx);
   registerScaffoldSession(ctx);
+  registerRoadmapSession(ctx);
   registerExecuteSession(ctx);
   registerCodeSearch(ctx);
   registerOutline(ctx);

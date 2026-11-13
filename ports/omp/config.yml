@@ -14,6 +14,7 @@ customTools:
   - ./.omp/tools/merge.ts
   - ./.omp/tools/design_session.ts  # B2a default: in-session design (judge+gateLint; lead spawns producer/critic)
   - ./.omp/tools/scaffold_session.ts # T4: in-session scaffold (judge+zoneCheck; lead spawns fixed scaffolder)
+  - ./.omp/tools/roadmap_session.ts  # Phase 1: in-session roadmap (judge+zoneCheck; lead spawns fixed roadmapper)
   - ./.omp/tools/execute_session.ts  # B2b default: in-session execute (judge+zoneCheck; lead spawns executor/domain)
   - ./.omp/tools/archive_spec.ts     # P9 B.2b: delta→archive живая спека (merge SP/FR в канон, reconcile/dedupe)
   - ./.omp/tools/plan.ts             # P9 Track D: one-shot план из спеки (omp -p, вне автоконтура)

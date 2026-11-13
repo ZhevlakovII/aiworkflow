@@ -45,6 +45,8 @@ content:
     worktree-note: " (isolated worktree)"
     zone-guard-dir: ".omp"
     discovery-note: "**Discovery через ast-index** (не mass-grep): `ast-index class/symbol/outline/callers/usages`."
+    discovery-note-roadmapper: "**Discovery через ast-index** (не mass-grep): `ast-index class/symbol/outline/callers/usages`."
+    description-suffix-roadmapper: " Invoke on roadmap stage only (AC/phase TZ)."
     discovery-note-explorer: "**Discovery через ast-тулы — ДЕФОЛТ, не mass-grep:** `code_search` (symbol/class/usages/callers/implementations/deps/api), `outline` (структура файла до чтения), `callers` (кто зовёт). grep — только fallback там, где ast не покрывает (комменты вне символов)."
     gate-linter-ref: "детерминированный gate-линтер"
     critic-findings-format: ". Не лочишь, не правишь, не решаешь направление."

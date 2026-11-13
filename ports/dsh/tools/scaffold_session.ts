@@ -9,6 +9,7 @@ import { ok, err } from "./_lib/result";
 import { nodeGitSeam } from "../../../core/src/rails/git-seam.ts";
 import { runJudgeCli, type JudgeCliDeps } from "../../../core/src/stage/judge-cli.ts";
 import { contractKey12 } from "../../../core/src/stage/journal.ts";
+import { isSpecRoadmapGeneration } from "../../../core/src/design/generation.ts";
 
 const STEPS = ["begin", "check", "done"] as const;
 type Step = (typeof STEPS)[number];
@@ -87,6 +88,14 @@ export function registerScaffoldSession(ctx: DshToolContext): void {
       if (stage.startsWith("design") || stage.startsWith("execute") || !stage.startsWith("scaffold")) {
         return emitToolResult(
           err(`MISROUTE: scaffold_session на не-scaffold задаче (stage=${stage || "<none>"}).`),
+        );
+      }
+      if (isSpecRoadmapGeneration(taskText)) {
+        return emitToolResult(
+          err(
+            "scaffold_session refused: generation=spec-roadmap " +
+              "(scaffold retired; use roadmap_session + roadmapper)",
+          ),
         );
       }
       const taskRel = path.relative(cwd, taskPath).split(path.sep).join("/");

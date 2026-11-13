@@ -15,6 +15,8 @@ content:
     worktree-note: " (isolated worktree)"
     zone-guard-dir: ".dsh-aiwf"
     discovery-note: "**Discovery через ast-index** (не mass-grep): `ast-index class/symbol/outline/callers/usages`."
+    discovery-note-roadmapper: "**Discovery через ast-index** (не mass-grep): `ast-index class/symbol/outline/callers/usages`."
+    description-suffix-roadmapper: " Invoke on roadmap stage only (AC/phase TZ)."
     discovery-note-explorer: "**Discovery через ast-тулы — ДЕФОЛТ:** `code_search`, `outline`, `callers` (P1)."
     gate-linter-ref: "детерминированный gate-линтер"
     critic-findings-format: ". Не лочишь, не правишь, не решаешь направление."

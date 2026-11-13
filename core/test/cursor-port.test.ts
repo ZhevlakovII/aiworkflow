@@ -250,21 +250,23 @@ test("aiwf-flow skill includes scaffold in stage list", () => {
   assert.match(skill, /classify\s*→\s*design\s*→\s*plan\s*→\s*scaffold\s*→\s*execute/);
 });
 
-test("setup.ps1: all includes cursor; both does not", () => {
+test("setup.ps1: thin delegate; live ValidateSet; -Yes -> yolo", () => {
   const ps1 = readFileSync(nodePath.join(REPO_ROOT, "tools", "setup.ps1"), "utf-8");
-  // Assignment body must include cursor|all and must NOT or-eq 'both'
   assert.match(
     ps1,
-    /\$doCursor\s*=\s*\(\$Flow -eq 'cursor'\s*-or\s*\$Flow -eq 'all'\)/
+    /ValidateSet\('omp','opencode','cursor','dsh','all'\)/,
   );
-  assert.doesNotMatch(
-    ps1,
-    /\$doCursor\s*=\s*\([^)]*-eq 'both'/
-  );
+  assert.doesNotMatch(ps1, /'claude'/);
+  assert.doesNotMatch(ps1, /'both'/);
+  assert.match(ps1, /aiwf\.ts/);
+  assert.match(ps1, /\$Yes\)\s*\{\s*\$nodeArgs\s*\+=\s*@\('--mode',\s*'yolo'\)/);
 });
 
-test("setup.sh: all includes cursor; both excludes cursor", () => {
+test("setup.sh: thin delegate; live flavors; no DO_CLAUDE/both", () => {
   const sh = readFileSync(nodePath.join(REPO_ROOT, "tools", "setup.sh"), "utf-8");
-  assert.match(sh, /all\)\s+DO_OMP=1; DO_CLAUDE=1; DO_OPENCODE=1; DO_CURSOR=1/);
-  assert.match(sh, /both\)\s+DO_OMP=1; DO_CLAUDE=1; DO_OPENCODE=1\s*;;/);
+  assert.match(sh, /Live flavors:\s*omp\|opencode\|cursor\|dsh\|all/);
+  assert.match(sh, /aiwf\.ts/);
+  assert.match(sh, /ARGS\+=\(--mode yolo\)/);
+  assert.doesNotMatch(sh, /DO_CLAUDE/);
+  assert.doesNotMatch(sh, /^\s*both\)/m);
 });

@@ -130,7 +130,7 @@ test("CLI: ears fixture -> exit 1, GATE: BOUNCE, header + 4 [x] lines", () => {
     exists: (p) => fs.existsSync(p),
   });
   assert.equal(out.exitCode, 1);
-  assert.match(out.stdout, /^SP-points: 1 \| AD-decisions: 1 \| FR-points: 7 \| findings: 4/);
+  assert.match(out.stdout, /^SP-points: 1 \| AD-decisions: 1 \| FR-points: 7 \| AC: 0 \| phase: 0 \| findings: 4/);
   assert.equal(out.stdout.split("\n").filter((l) => l.startsWith("  [x] ")).length, 4);
   assert.match(out.stdout, /GATE: BOUNCE$/);
 });
@@ -154,4 +154,100 @@ test("CLI: unknown flag -> exit 2 usage error", () => {
   const out = runGateLintCli(["--bogus"], { exists: () => true });
   assert.equal(out.exitCode, 2);
   assert.match(out.stderr, /неизвестный аргумент/);
+});
+
+// ---------------------------------------------------------------------------
+// Generation: spec-roadmap vs legacy sp-adr
+// ---------------------------------------------------------------------------
+
+test("gateLint legacy still requires ADR blocks", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gate-lint-legacy-"));
+  const task = path.join(dir, "task.md");
+  fs.writeFileSync(task, "---\nid: t\nstage: design\n---\n\n# Body line\n", "utf8");
+  const spec = path.join(dir, "spec.md");
+  fs.writeFileSync(
+    spec,
+    "```spec\nid: SP-a\nsource: task.md#L6\nstatement: ok\n```\n",
+    "utf8",
+  );
+  const g = gateLint(task, spec, path.join(dir, "missing-adr.md"), dir);
+  assert.ok(g.findings.some((f) => f.includes("файл не найден")));
+});
+
+test("gateLint spec-roadmap: no ADR required; source↔spec PASS", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gate-lint-sr-"));
+  const task = path.join(dir, "task.md");
+  fs.writeFileSync(
+    task,
+    "---\nid: t\nstage: design\ngeneration: spec-roadmap\n---\n\n# Body line\n",
+    "utf8",
+  );
+  const spec = path.join(dir, "spec.md");
+  fs.writeFileSync(
+    spec,
+    "```spec\nid: SP-a\nsource: task.md#L7\nstatement: ok\n```\n",
+    "utf8",
+  );
+  const g = gateLint(task, spec, null, dir, { generation: "spec-roadmap" });
+  assert.deepEqual(g.findings, []);
+  assert.equal(g.nAd, 0);
+});
+
+test("gateLint spec-roadmap: rejects AC with missing covers / phantom", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gate-lint-ac-"));
+  const task = path.join(dir, "task.md");
+  fs.writeFileSync(
+    task,
+    "---\nid: t\nstage: design\ngeneration: spec-roadmap\n---\n\n# Body line\n",
+    "utf8",
+  );
+  const spec = path.join(dir, "spec.md");
+  fs.writeFileSync(
+    spec,
+    "```spec\nid: SP-a\nsource: task.md#L7\nstatement: ok\n```\n",
+    "utf8",
+  );
+  const roadmap = path.join(dir, "roadmap.md");
+  fs.writeFileSync(
+    roadmap,
+    "```ac\nid: AC-orphan\ncovers:\nstatement: no bind\n```\n" +
+      "```ac\nid: AC-ghost\ncovers: SP-ghost\nstatement: phantom\n```\n",
+    "utf8",
+  );
+  const g = gateLint(task, spec, null, dir, {
+    generation: "spec-roadmap",
+    roadmapPath: roadmap,
+  });
+  assert.ok(g.findings.some((f) => f.includes("AC-orphan") && f.includes("covers пуст")));
+  assert.ok(g.findings.some((f) => f.includes("AC-ghost") && f.includes("фантом")));
+});
+
+test("gateLint spec-roadmap: accepts bound AC/phase", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gate-lint-ok-"));
+  const task = path.join(dir, "task.md");
+  fs.writeFileSync(
+    task,
+    "---\nid: t\nstage: design\ngeneration: spec-roadmap\n---\n\n# Body line\n",
+    "utf8",
+  );
+  const spec = path.join(dir, "spec.md");
+  fs.writeFileSync(
+    spec,
+    "```spec\nid: SP-a\nsource: task.md#L7\nstatement: ok\n```\n",
+    "utf8",
+  );
+  const roadmap = path.join(dir, "roadmap.md");
+  fs.writeFileSync(
+    roadmap,
+    "```phase\nid: PH-1\ncovers: SP-a\nstatement: phase one\n```\n" +
+      "```ac\nid: AC-1\ncovers: SP-a\nstatement: verify SP-a\n```\n",
+    "utf8",
+  );
+  const g = gateLint(task, spec, null, dir, {
+    generation: "spec-roadmap",
+    roadmapPath: roadmap,
+  });
+  assert.deepEqual(g.findings, []);
+  assert.equal(g.nAc, 1);
+  assert.equal(g.nPhase, 1);
 });

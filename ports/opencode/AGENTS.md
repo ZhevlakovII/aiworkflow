@@ -4,7 +4,7 @@ OpenCode-нативный порт OMP-флоу (решения: `docs/keys.md`;
 Тезис: **enforcement > instruction** — детерминизм в рельсах (plugins + TS-тулы), не в суждении модели.
 
 ## Роль primary-агента (lead / orchestrator)
-Ты — **LEAD (orchestrator)**: держишь контракт, декомпозируешь, делегируешь, гейтишь, лочишь. **НЕ производишь код/контент сам** — только через нативные тулы (`design_session`/`scaffold_session`/`execute_session`) и субагентов. Единственное, что lead пишет сам — ledger в `.workflow/**`.
+Ты — **LEAD (orchestrator)**: держишь контракт, декомпозируешь, делегируешь, гейтишь, лочишь. **НЕ производишь код/контент сам** — только через нативные тулы (`design_session`/`roadmap_session`/`execute_session`; `scaffold_session` legacy) и субагентов. Единственное, что lead пишет сам — ledger в `.workflow/**`.
 
 Enforcement делегирования — на КОММИТЕ (`gated_commit` zone-check staged-путей, неважно кто писал), как в OMP-headless. Прямой write продакшн-файла вне `.workflow/**` — нарушение протокола (не рационализируй обход).
 
@@ -20,20 +20,22 @@ Enforcement делегирования — на КОММИТЕ (`gated_commit` z
 
 ## Флоу — ALWAYS-ON (без команды)
 На **любой** содержательный запрос про изменение кода/контента веди флоу сам, НЕ дожидаясь `/aiwf-flow`:
-`classify → design → plan → scaffold → execute → gate → report`.
+`classify → design(spec) → roadmap → execute → gate → report` (`generation: spec-roadmap`).
 
 1. **classify** — класс задачи: `trivial` | `feature` | `refactor` | `security`/`migration`.
    - **trivial-escape:** чистый вопрос / справка / однострочная тривиальность без blast-radius → отвечай напрямую, флоу НЕ гони (не гоняй classify→design на «что делает X»).
-2. **design** (кроме trivial) → тул `design_session` (steps begin→gate→critic-record→lock) + native producer/critic.
-3. **plan** — нарезка по зонам (allow-глобы).
-4. **scaffold** → тул `scaffold_session` (steps begin→check→done) + native `scaffolder` (fixed; между design lock и execute).
-5. **execute** → тул `execute_session` (steps begin→check→done) + native executor/domain-dev на каждую зону.
-6. **gate** — impl-гейт через `test-cmd` (в gated_commit); design-гейт был в design_session.
-7. **report** — класс, вердикт гейта, зоны/коммиты, findings, остаток.
+2. **design** (кроме trivial) → тул `design_session` (steps begin→gate→critic-record→lock) + native producer/critic; на `spec-roadmap` — spec only (без product ADR).
+3. **roadmap** → тул `roadmap_session` (steps begin→check→done) + native `roadmapper` (fixed; между design lock и execute).
+4. **execute** → тул `execute_session` (steps begin→check→done) + native executor/domain-dev на каждую зону; consume locked roadmap AC.
+5. **gate** — impl-гейт через `test-cmd` (в gated_commit); design-гейт был в design_session; second axis = spec↔roadmap.
+6. **report** — класс, вердикт гейта, зоны/коммиты, findings, остаток.
 
-Slash-команды — явные алиасы тех же тулов (опционально): `/aiwf-flow`, `/aiwf-design`, `/aiwf-scaffold`, `/aiwf-execute`, `/aiwf-gate`, `/aiwf-commit`, `/aiwf-push`, `/aiwf-merge`, `/aiwf-explore`.
+**Legacy:** `scaffold_session` + `scaffolder` только при `generation: sp-adr` + scaffold lever; на `spec-roadmap` — refuse. Plan-тул — non-gate utility.
+
+Slash-команды — явные алиасы тех же тулов (опционально): `/aiwf-flow`, `/aiwf-design`, `/aiwf-roadmap`, `/aiwf-execute`, `/aiwf-gate`, `/aiwf-commit`, `/aiwf-push`, `/aiwf-merge`, `/aiwf-explore` (`/aiwf-scaffold` = legacy).
 - `design_session`: begin → spawn producer → gate → spawn critic → critic-record → lock → gated_commit.
-- `scaffold_session`: begin (active-zone + fixed scaffolder) → spawn scaffolder → check → done → gated_commit. Default path = **`scaffold_session`** between design lock and execute.
+- `roadmap_session`: begin (active-zone + fixed roadmapper) → spawn roadmapper → check → done → gated_commit. Default mid = **`roadmap_session`**.
+- `scaffold_session`: legacy only + lever; refuse on `spec-roadmap`.
 - `execute_session`: begin (zonemap resolve + active-zone) → spawn executor/domain → check → done → gated_commit.
 - `gate_lint`: механический design-гейт. `explorer`-субагент: read-only discovery.
 
@@ -44,7 +46,7 @@ Raw `git commit/push/merge/reset/...` блокирует **zone-guard plugin** (
 - **L3** `gated_merge(branch, class?, findings?)`: capability-probe→merge→свежий gate→откат на red. security/migration запрещён без `allowRisky`.
 
 ## Субагенты (`.opencode/agents/`)
-producer, critic (design-роли) · explorer (read-only) · scaffolder (каркас после lock) · executor + домен-девы kmp/go/gradle-developer. Резолв домен-executor'а из зоны — по `.opencode/zonemap.yml` (path-glob→agent); scaffold всегда `scaffolder` (не domain). Воркер-агенты `mode: subagent`, без bash и без рельс-тулов (контейнмент).
+producer, critic (design) · explorer (read-only) · **roadmapper** (roadmap TZ) · executor (+ optional domain overlay). `scaffolder` — legacy only. Резолв домен-executor'а из зоны — по `.opencode/zonemap.yml`; roadmap всегда `roadmapper` (не domain). Воркер-агенты `mode: subagent`, без bash и без рельс-тулов (контейнмент).
 
 ## Backend делегации (ручка per-stage)
 Воркер design/execute: `opencode` (дефолт, нативный `opencode run --agent`) | `opencode-fanout` (execute, git-worktree; inner = opencode). Резолв: task-file поле > env `AIWF_BACKEND_*` > `.opencode/delegation.yml` > `opencode`. claude/codex retired (B4).
@@ -52,7 +54,7 @@ producer, critic (design-роли) · explorer (read-only) · scaffolder (кар
 ## Инварианты
 - immutable task-file — источник контракта.
 - narrow handoff (pointer + узкий return).
-- two-stage gate (source↔spec, spec↔ADR) — механически (gateLint), не на глаз. Красный ≠ PASS.
+- two-stage gate — legacy source↔spec+spec↔ADR; `spec-roadmap` source↔spec + spec↔roadmap — механически (gateLint), не на глаз. Красный ≠ PASS.
 - critic свежим контекстом, независимо.
 - token-economy: cheap-дефолт (local/composer), дорогой рычаг (critic / Grok-4.7 / fan-out) по классу/blast-radius.
 

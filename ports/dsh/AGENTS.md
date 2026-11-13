@@ -3,14 +3,15 @@
 Порт OMP-контракта для DeepSeek Harness (`dsh`). Плагин живёт в профиле `~/.dsh/profiles/<profile>/plugins/aiwf/`; **проектный overlay** — `<proj>/.dsh-aiwf/` (AGENTS, agents, zonemap).
 
 ## Роли (`.dsh-aiwf/agents/`)
-producer · critic · explorer · scaffolder · executor · domain-devs (kmp/go/…). Резолв домена — `execute_session` + `.dsh-aiwf/zonemap.yml`.
+producer · critic · explorer · **roadmapper** · executor · (domain overlays). `scaffolder` — retired на `generation: spec-roadmap` (legacy + lever only). Резолв домена — `execute_session` + `.dsh-aiwf/zonemap.yml`.
 
 ## Стадии
-`classify → design → plan → scaffold → execute → gate → report`
+**Дефолт** (`generation: spec-roadmap`): `classify → design(spec) → roadmap → execute → gate → report`
 
-**Design** — только `design_session(begin|gate|critic-record|lock)` + spawn producer/critic.  
-**Scaffold** — `scaffold_session(begin|check|done)` + scaffolder.  
-**Execute** — `execute_session(begin|check|done)` + executor/domain.
+**Design** — только `design_session(begin|gate|critic-record|lock)` + spawn producer/critic; spec-only на new generation.  
+**Roadmap** — `roadmap_session(begin|check|done)` + `roadmapper` (fail-closed unless spec-roadmap).  
+**Execute** — `execute_session(begin|check|done)` + executor/domain; consume locked roadmap.  
+**Scaffold** — legacy only (`scaffold_session`); refuse на `spec-roadmap`.
 
 MISROUTE fail-closed: session tool отказывает при неверном `stage` в task-file.
 

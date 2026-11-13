@@ -31,17 +31,14 @@ test("scaffold_session.ts source must not contain claude exec or runWorker", () 
 test("config.yml registers scaffold_session; scaffold_worker ABSENT", () => {
   const yml = readFileSync(CONFIG_YML, "utf-8");
   assert.ok(yml.includes("scaffold_session.ts"), "scaffold_session.ts registered in customTools");
+  assert.ok(yml.includes("roadmap_session.ts"), "roadmap_session.ts registered in customTools");
   assert.ok(!yml.includes("scaffold_worker.ts"), "scaffold_worker.ts must be absent from config");
   assert.ok(!existsSync(WORKER_SRC), "scaffold_worker.ts file must be deleted/absent");
 });
-
-test("AGENTS.md: scaffold_session is default; no LEGACY scaffold_worker", () => {
+test("AGENTS.md: scaffold_session legacy-only; no LEGACY scaffold_worker", () => {
   const md = readFileSync(AGENTS_MD, "utf-8");
   assert.match(md, /scaffold_session/, "mentions scaffold_session");
-  assert.match(
-    md,
-    /Default path\s*=\s*\*\*`scaffold_session`\*\*|default path\s*=\s*\*\*`scaffold_session`\*\*|default\s*=\s*\*\*`scaffold_session`\*\*/i,
-  );
+  assert.match(md, /legacy/i, "scaffold framed as legacy");
   assert.doesNotMatch(md, /LEGACY[\s\S]{0,120}scaffold_worker/, "no LEGACY scaffold_worker paragraph");
   assert.doesNotMatch(md, /scaffold_worker\s*\(/, "no scaffold_worker call-site docs");
 });

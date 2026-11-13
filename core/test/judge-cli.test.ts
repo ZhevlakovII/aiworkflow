@@ -984,3 +984,236 @@ test("judge --help lists design-needs-human", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Generation: spec-roadmap (roadmap stage + execute preconditions)
+// ---------------------------------------------------------------------------
+
+function writeRoadmapTask(
+  dir: string,
+  name = "roadmap.md",
+  extraFm: string[] = [],
+): string {
+  const p = nodePath.join(dir, name);
+  writeFileSync(
+    p,
+    [
+      "---",
+      "id: rtest",
+      "stage: roadmap",
+      "class: feature",
+      "generation: spec-roadmap",
+      ...extraFm,
+      "---",
+      "",
+      "# Roadmap judge test",
+      "",
+    ].join("\n"),
+    "utf-8",
+  );
+  return p;
+}
+
+function writeSpecOnlyArtifacts(
+  dir: string,
+  taskRel = "task.md",
+  extraFm: string[] = ["generation: spec-roadmap"],
+): { specRel: string; spec: string } {
+  const srcLine = judgeSourceLine(extraFm);
+  const spec = [
+    "```spec",
+    "id: SP-j",
+    `source: ${taskRel}#L${srcLine}`,
+    "statement: judge requirement",
+    "```",
+    "",
+  ].join("\n");
+  mkdirSync(nodePath.join(dir, "docs", "design"), { recursive: true });
+  const specRel = "docs/design/jtest-spec.md";
+  writeFileSync(nodePath.join(dir, specRel), spec, "utf-8");
+  return { specRel, spec };
+}
+
+function seedRoadmapDoneOk(
+  dir: string,
+  taskPath: string,
+  ts = "2026-09-24T12:00:00.000Z",
+): string {
+  const ck12 = seedDesignLock(dir, taskPath, ts);
+  appendEvent(dir, ck12, "roadmap", {
+    type: "roadmap-started",
+    task: nodePath.basename(taskPath),
+    contract_key: ck12,
+    ts,
+  });
+  appendEvent(dir, ck12, "roadmap", { type: "roadmap-done", outcome: "ok", ts });
+  return ck12;
+}
+
+test("judge --help lists roadmap-begin/done", () => {
+  const dir = makeTmp();
+  try {
+    const help = runJudgeCli(["--help"], depsFor(dir));
+    assert.match(help.stdout, /roadmap-begin/);
+    assert.match(help.stdout, /roadmap-done/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("roadmap-begin refuses legacy generation", () => {
+  const dir = makeTmp();
+  try {
+    writeTask(dir);
+    writeFileSync(
+      nodePath.join(dir, "roadmap.md"),
+      ["---", "id: r", "stage: roadmap", "class: feature", "binds: task.md", "---", "", "# R", ""].join(
+        "\n",
+      ),
+      "utf-8",
+    );
+    seedDesignLock(dir, nodePath.join(dir, "task.md"));
+    const begin = runJudgeCli(["roadmap-begin", "--task", "roadmap.md"], depsFor(dir));
+    assert.equal(begin.exitCode, 1);
+    assert.match(begin.stderr, /generation must be spec-roadmap/);
+    assert.deepEqual(readJournal(dir, ck12Of(dir, nodePath.join(dir, "roadmap.md")), "roadmap"), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("roadmap-begin without design-lock is blocked", () => {
+  const dir = makeTmp();
+  try {
+    writeTask(dir, "task.md", ["generation: spec-roadmap"]);
+    writeRoadmapTask(dir, "roadmap.md", ["binds: task.md"]);
+    const begin = runJudgeCli(["roadmap-begin", "--task", "roadmap.md"], depsFor(dir));
+    assert.equal(begin.exitCode, 1);
+    assert.match(begin.stderr, /no design-lock/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("happy path: design-lock (spec-only) → roadmap → execute", () => {
+  const dir = makeTmp();
+  try {
+    const extra = ["generation: spec-roadmap"];
+    writeTask(dir, "task.md", extra);
+    writeSpecOnlyArtifacts(dir, "task.md", extra);
+    writeRoadmapTask(dir, "roadmap.md", ["binds: task.md"]);
+    writeExecuteTask(dir, "exec.md", ["binds: task.md", "generation: spec-roadmap"]);
+    const deps = depsFor(dir);
+
+    assert.equal(runJudgeCli(["design-begin", "--task", "task.md"], deps).exitCode, 0);
+    assert.equal(
+      runJudgeCli(["design-gate-record", "--task", "task.md", "--verdict", "PASS"], deps).exitCode,
+      0,
+    );
+    const lock = runJudgeCli(["design-lock", "--task", "task.md"], deps);
+    assert.equal(lock.exitCode, 0, lock.stderr);
+    const ck12 = ck12Of(dir, nodePath.join(dir, "task.md"));
+    const lockEv = readJournal(dir, ck12, "design").find((e) => e.type === "design-lock")!;
+    assert.equal(lockEv.spec, "docs/design/jtest-spec.md");
+    assert.equal(lockEv.adr, undefined);
+    assert.equal(lockEv.generation, "spec-roadmap");
+
+    const rBegin = runJudgeCli(["roadmap-begin", "--task", "roadmap.md"], deps);
+    assert.equal(rBegin.exitCode, 0, rBegin.stderr);
+    const rDone = runJudgeCli(
+      ["roadmap-done", "--task", "roadmap.md", "--outcome", "ok"],
+      deps,
+    );
+    assert.equal(rDone.exitCode, 0, rDone.stderr);
+
+    const eBegin = runJudgeCli(["execute-begin", "--task", "exec.md"], deps);
+    assert.equal(eBegin.exitCode, 0, eBegin.stderr);
+    assert.deepEqual(
+      readJournal(dir, ck12, "roadmap").map((e) => e.type),
+      ["roadmap-started", "roadmap-done"],
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("execute-begin spec-roadmap without roadmap-done is blocked (no fake)", () => {
+  const dir = makeTmp();
+  try {
+    writeTask(dir, "task.md", ["generation: spec-roadmap"]);
+    writeExecuteTask(dir, "exec.md", ["binds: task.md", "generation: spec-roadmap"]);
+    seedDesignLock(dir, nodePath.join(dir, "exec.md"));
+    const begin = runJudgeCli(["execute-begin", "--task", "exec.md"], depsFor(dir));
+    assert.equal(begin.exitCode, 1);
+    assert.match(begin.stderr, /no roadmap-done outcome=ok/);
+    assert.deepEqual(readJournal(dir, ck12Of(dir, nodePath.join(dir, "exec.md")), "roadmap"), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("execute-begin spec-roadmap with roadmap-done ok succeeds without scaffold", () => {
+  const dir = makeTmp();
+  try {
+    writeTask(dir, "task.md", ["generation: spec-roadmap"]);
+    const exec = writeExecuteTask(dir, "exec.md", [
+      "binds: task.md",
+      "generation: spec-roadmap",
+    ]);
+    const ck = seedRoadmapDoneOk(dir, exec);
+    const begin = runJudgeCli(["execute-begin", "--task", "exec.md"], depsFor(dir));
+    assert.equal(begin.exitCode, 0, begin.stderr);
+    assert.deepEqual(readJournal(dir, ck, "scaffold"), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("scaffold-begin refuses generation=spec-roadmap", () => {
+  const dir = makeTmp();
+  try {
+    writeTask(dir, "task.md", ["generation: spec-roadmap"]);
+    writeFileSync(
+      nodePath.join(dir, "scaffold.md"),
+      [
+        "---",
+        "id: s",
+        "stage: scaffold",
+        "class: feature",
+        "scaffold: on",
+        "generation: spec-roadmap",
+        "binds: task.md",
+        "---",
+        "",
+        "# S",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    seedDesignLock(dir, nodePath.join(dir, "task.md"));
+    const begin = runJudgeCli(["scaffold-begin", "--task", "scaffold.md"], depsFor(dir));
+    assert.equal(begin.exitCode, 1);
+    assert.match(begin.stderr, /scaffold retired|spec-roadmap/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("design-lock spec-roadmap succeeds without ADR file", () => {
+  const dir = makeTmp();
+  try {
+    const extra = ["generation: spec-roadmap"];
+    writeTask(dir, "task.md", extra);
+    writeSpecOnlyArtifacts(dir, "task.md", extra);
+    const deps = depsFor(dir);
+    assert.equal(runJudgeCli(["design-begin", "--task", "task.md"], deps).exitCode, 0);
+    assert.equal(
+      runJudgeCli(["design-gate-record", "--task", "task.md", "--verdict", "PASS"], deps).exitCode,
+      0,
+    );
+    const lock = runJudgeCli(["design-lock", "--task", "task.md"], deps);
+    assert.equal(lock.exitCode, 0, lock.stderr);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

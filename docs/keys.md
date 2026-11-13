@@ -8,20 +8,22 @@
 
 ## Макро-флоу
 
-**Дефолт:** `classify → design? → execute → gate → report` (design для нетривиального; `trivial` может без design).
+**Дефолт:** `classify → design(spec) → roadmap → execute → gate → report` (design+roadmap для нетривиального; `trivial` может без design где class policy уже позволяет).
 
-**Каталог стадий (7):** classify · design · plan · scaffold · execute · gate · report. Plan и scaffold — именованные стадии, **default off**, opt-in рычагом задачи (`plan`/`plan-opt-in`, `scaffold`/`scaffold-opt-in`).
+**Каталог стадий:** classify · design · roadmap · execute · gate · report. Имена `plan` / `scaffold` **не** в каталоге. Critic — opt-in (`critic`/`critic-opt-in`). Plan-тул — non-gate utility.
+
+**Generation marker:** `generation: spec-roadmap` = новый путь (spec + roadmap, без product ADR). Absent / `generation: sp-adr` = legacy dual SP+ADR (+ optional scaffold lever). Exclusive path per contract — no mixed axes.
 
 - Lead оркестрирует; не производит production-код/контент.
-- Session-драйверы: `design_session` / `execute_session`; `scaffold_session` только при scaffold on. Judge/journal в `core/src/stage/` (общий ck12: strip id/supersedes/stage + `binds` на design-задачу).
-- Механический design-гейт = `gate-lint` / judge — красный ≠ PASS.
+- Session-драйверы: `design_session` / `roadmap_session` / `execute_session`; `scaffold_session` только legacy + scaffold on. Judge/journal в `core/src/stage/` (общий ck12: strip id/supersedes/stage + `binds` на design-задачу; stage `roadmap`).
+- Механический design-гейт = `gate-lint` / judge — красный ≠ PASS. New gen second axis = spec↔roadmap (`ac`/`phase` covers).
 - Task-file (`.workflow/tasks/<id>.md`) — иммутабельный контракт.
 
 ## Роли
 
 Текст канона: `canon/roles/` → в port `agents/` на install/render.
 
-producer · critic · explorer · scaffolder · executor (пять базовых). Доменный агент — не канон: consumer overlay + запись заполненной project zonemap.
+producer · critic · explorer · roadmapper · executor. `scaffolder` — retired на `spec-roadmap` (legacy only). Доменный агент — не канон: consumer overlay + запись заполненной project zonemap.
 
 Резолв execute: нет карты / пустая / miss / deny / ambiguous → `executor`; ровно одно совпадение → имя из карты. Правила проекта на `executor` (и любом domain-акторе) важнее общих идиом. Produce ≠ decide: worker производит; critic находит; **лочит lead**.
 
@@ -50,15 +52,17 @@ producer · critic · explorer · scaffolder · executor (пять базовы�
 
 ## Порты
 
-| Клиент | SRC | Dest у consumer |
-|--------|-----|-----------------|
-| omp | `ports/omp/` | `.omp/` или `~/.omp/agent` |
-| cursor | `ports/cursor/` | `.cursor/` / `~/.cursor` |
-| opencode | `ports/opencode/` | `.opencode/` (+ root `opencode.json`) |
-| dsh | `ports/dsh/` | профиль `~/.dsh/profiles/<profile>/plugins/aiwf/` + проект `.dsh-aiwf/` |
-| claude | `ports/claude/` | `.claude/` / `~/.claude` |
+| Клиент | SRC | Dest у consumer | Installer |
+|--------|-----|-----------------|-----------|
+| omp | `ports/omp/` | `.omp/` или `~/.omp/agent` | live |
+| cursor | `ports/cursor/` | `.cursor/` / `~/.cursor` | live |
+| opencode | `ports/opencode/` | `.opencode/` (+ root `opencode.json`) | live |
+| dsh | `ports/dsh/` | профиль `~/.dsh/profiles/<profile>/plugins/aiwf/` + проект `.dsh-aiwf/` | live |
+| claude | `ports/claude/` | (unused by installer) | **not** in UX |
 
-**DSH P1 (2026-11-09):** `gated_merge`, `code_search`/`outline`/`callers` (ast-index), `hooks/dsh-telemetry.ts`, seed `delegation.yml`, `setup.sh -Flow all` → dsh.
+**Installer CLI (2026-11-13):** primary = `node tools/aiwf.ts` (`setup` \| `install` \| `uninstall` \| `head`); modes `full|key|soft|yolo`; soft never overwrites existing shared head; uninstall never touches `~/.config/aiwf`. Rejected flows: `claude` \| `codex` \| `both`.
+
+**DSH P1 (2026-11-09):** `gated_merge`, `code_search`/`outline`/`callers` (ast-index), `hooks/dsh-telemetry.ts`, seed `delegation.yml`, setup `--flow all` → dsh.
 
 **DSH P2 (2026-11-09):** `plan`/`synthesize`/`archive_spec`, `hooks/queue-runner` (`DSH_QUEUE`/`AIWF_QUEUE`), `WATCHDOG.md`+`WATCHDOG.yml` (doc-only advisor), fan-out **unsupported** (`backend.ts` fail-closed).
 

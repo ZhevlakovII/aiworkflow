@@ -4,7 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/ZhevlakovII/aiworkflow/main/bootstrap.sh | bash
 #   curl -fsSL .../bootstrap.sh | bash -s -- --yes
 #   curl -fsSL .../bootstrap.sh | bash -s -- --install=node,git
-#   curl -fsSL .../bootstrap.sh | bash -s -- --flow claude
+#   curl -fsSL .../bootstrap.sh | bash -s -- --mode yolo
 #   curl -fsSL .../bootstrap.sh | bash -s -- --flow cursor
 #   curl -fsSL .../bootstrap.sh | bash -s -- --flow dsh
 #   curl -fsSL .../bootstrap.sh | bash -s -- --target /proj
@@ -16,7 +16,7 @@
 #   2) Download aiworkflow-install.zip + neighbor .sha256 over HTTPS (GitHub host allowlist)
 #   3) Verify SHA-256 of the zip BEFORE extract / stamp; on fail retain partial + print path
 #   4) Extract to a temp install cache (not flavor dest, not ~/.config/aiwf, not ~/.aiworkflow)
-#   5) Run tools/setup.sh from that cache with forwarded flags
+#   5) Run node tools/aiwf.ts setup from that cache with forwarded flags
 #   6) On setup success ONLY: delete zip + extracted cache tree
 #   7) On failure: retain cache and print its path
 # Existing ~/.aiworkflow is NEVER deleted (may be a developer working copy).
@@ -27,9 +27,8 @@
 #   tag (no scheme)    -> same two assets for that release tag
 #   https URL          -> zip URL; host allowlist only; SHA from same-release neighbor .sha256
 #
-# Flow set matches live setup: omp|claude|opencode|cursor|dsh|all|both
-#   default all includes cursor + dsh; both = omp+claude+opencode (no cursor).
-# Setup flags are forwarded (parsed here only for --help / --what-if).
+# Live flavors: omp|opencode|cursor|dsh|all (no claude/codex/both).
+# Modes: full|key|soft|yolo (--yes/-y => yolo). Setup flags forwarded to Node CLI.
 set -euo pipefail
 
 OWNER_REPO="ZhevlakovII/aiworkflow"
@@ -43,14 +42,14 @@ bootstrap.sh - download + verify + setup AI Workflow (macos/linux)
 Usage:
   bootstrap.sh [setup-flags...] [--what-if] [-h|--help]
 
-Flow (parity with tools/setup.sh), via --flow:
-  omp | claude | opencode | cursor | dsh | all | both
-  default: all  (includes cursor and dsh)
-  both = omp+claude+opencode only (no cursor)
+Flow (live flavors), via --flow:
+  omp | opencode | cursor | dsh | all
+  default: all
+  (claude / codex / both retired from installer UX)
 
-Forwarded setup flags (examples):
-  --yes / -y, --skip-smoke, --install=node,git, --flow <name>,
-  --target <dir>, --keep-agents, --default-roles, --check
+Forwarded to node tools/aiwf.ts setup (examples):
+  --yes / -y (-> --mode yolo), --mode full|key|soft|yolo,
+  --skip-smoke, --flow <name>, --target <dir>, --keep-agents, --check
 
 Release pin via env AIWF_RELEASE:
   (empty) | latest     latest GitHub Release assets
@@ -60,7 +59,7 @@ Release pin via env AIWF_RELEASE:
                        SHA from neighbor .sha256 asset (same release)
 
 Lifecycle:
-  download zip+sha256 -> verify SHA-256 -> extract cache -> setup from cache
+  download zip+sha256 -> verify SHA-256 -> extract cache -> node setup from cache
   -> delete cache only on success; on failure retain + print path
   Does not delete existing ~/.aiworkflow. No git-clone install root.
 
@@ -227,18 +226,18 @@ download_file() {
 
 find_payload_root() {
   local extract_dir="$1"
-  if [ -f "$extract_dir/tools/setup.sh" ]; then
+  if [ -f "$extract_dir/tools/aiwf.ts" ] || [ -f "$extract_dir/tools/setup.sh" ]; then
     printf '%s\n' "$extract_dir"
     return 0
   fi
   local d
   for d in "$extract_dir"/*; do
-    if [ -d "$d" ] && [ -f "$d/tools/setup.sh" ]; then
+    if [ -d "$d" ] && { [ -f "$d/tools/aiwf.ts" ] || [ -f "$d/tools/setup.sh" ]; }; then
       printf '%s\n' "$d"
       return 0
     fi
   done
-  echo "ERROR: extracted zip has no tools/setup.sh under $extract_dir" >&2
+  echo "ERROR: extracted zip has no tools/aiwf.ts under $extract_dir" >&2
   return 1
 }
 
@@ -260,12 +259,12 @@ locate_extract_script() {
 
 payload_has_setup() {
   local extract_dir="$1"
-  if [ -f "$extract_dir/tools/setup.sh" ]; then
+  if [ -f "$extract_dir/tools/aiwf.ts" ] || [ -f "$extract_dir/tools/setup.sh" ]; then
     return 0
   fi
   local d
   for d in "$extract_dir"/*; do
-    if [ -d "$d" ] && [ -f "$d/tools/setup.sh" ]; then
+    if [ -d "$d" ] && { [ -f "$d/tools/aiwf.ts" ] || [ -f "$d/tools/setup.sh" ]; }; then
       return 0
     fi
   done
@@ -467,26 +466,36 @@ PY
 fi
 
 PAYLOAD_ROOT="$(find_payload_root "$EXTRACT_DIR")"
-SETUP_SH="${PAYLOAD_ROOT}/tools/setup.sh"
+AIWF_TS="${PAYLOAD_ROOT}/tools/aiwf.ts"
 echo "payload: ${PAYLOAD_ROOT}"
 
-if [ ! -f "$SETUP_SH" ]; then
-  echo "ERROR: missing ${SETUP_SH}" >&2
+if [ ! -f "$AIWF_TS" ]; then
+  echo "ERROR: missing ${AIWF_TS}" >&2
   echo "retained cache: ${CACHE_DIR}" >&2
   exit 1
 fi
-chmod +x "$SETUP_SH" 2>/dev/null || true
 
-echo "== running tools/setup.sh from cache =="
-# curl|bash feeds this script on stdin. Child setup inherits that pipe; any
-# reader (smoke, prompts, etc.) steals remaining bootstrap source so the parent
-# hits EOF before STAMP_OK=1 and the EXIT trap falsely reports stamp failure.
-# Detach setup stdin: real tty when available, else /dev/null.
+# Map legacy --yes/-y to --mode yolo for the Node CLI.
+NODE_ARGS=(setup)
+i=0
+while [ $i -lt ${#SETUP_ARGS[@]} ]; do
+  a="${SETUP_ARGS[$i]}"
+  case "$a" in
+    --yes|-y|--install-missing) NODE_ARGS+=(--mode yolo) ;;
+    --install|--install=*) ;; # retired
+    --default-roles) ;; # implied by yolo/key/soft
+    *) NODE_ARGS+=("$a") ;;
+  esac
+  i=$((i + 1))
+done
+
+echo "== running node tools/aiwf.ts setup from cache =="
+# curl|bash feeds this script on stdin. Detach child stdin: tty or /dev/null.
 set +e
 if [ -r /dev/tty ]; then
-  bash "$SETUP_SH" "${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}" </dev/tty
+  node "$AIWF_TS" "${NODE_ARGS[@]}" </dev/tty
 else
-  bash "$SETUP_SH" "${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}" </dev/null
+  node "$AIWF_TS" "${NODE_ARGS[@]}" </dev/null
 fi
 rc=$?
 set -e

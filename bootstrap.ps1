@@ -5,12 +5,10 @@
 # To pass flags through to setup (irm|iex cannot take args), fetch then invoke with args:
 #   $b = irm https://raw.githubusercontent.com/ZhevlakovII/aiworkflow/main/bootstrap.ps1
 #   & ([scriptblock]::Create($b)) -Yes
-#   & ([scriptblock]::Create($b)) -Install node,git
-#   & ([scriptblock]::Create($b)) -Flow claude            # only Claude Code (~/.claude)
-#   & ([scriptblock]::Create($b)) -Flow cursor            # only Cursor (~/.cursor)
-#   & ([scriptblock]::Create($b)) -Flow dsh               # only DSH plugin
-#   & ([scriptblock]::Create($b)) -Target C:\proj         # project-scoped, selected flows
-#   & ([scriptblock]::Create($b)) -WhatIf                 # resolve pin / print plan; no download
+#   & ([scriptblock]::Create($b)) -Mode yolo
+#   & ([scriptblock]::Create($b)) -Flow cursor
+#   & ([scriptblock]::Create($b)) -Target C:\proj
+#   & ([scriptblock]::Create($b)) -WhatIf
 #   & ([scriptblock]::Create($b)) -Help
 #
 # Lifecycle (AD-bootstrap-download-delete):
@@ -18,29 +16,26 @@
 #   2) Download aiworkflow-install.zip + neighbor .sha256 over HTTPS (GitHub host allowlist)
 #   3) Verify SHA-256 of the zip BEFORE extract / stamp; on fail retain partial + print path
 #   4) Extract to a temp install cache (not flavor dest, not ~/.config/aiwf, not ~/.aiworkflow)
-#   5) Run tools/setup.ps1 from that cache with forwarded flags
+#   5) Run node tools/aiwf.ts setup from that cache with forwarded flags
 #   6) On setup success ONLY: delete zip + extracted cache tree
 #   7) On failure: retain cache and print its path
 # Existing ~/.aiworkflow is NEVER deleted (may be a developer working copy).
 # No git clone as install runtime root.
 #
-# Pin ($env:AIWF_RELEASE):
-#   empty or "latest"  -> GitHub Releases latest assets
-#   tag (no scheme)    -> same two assets for that release tag
-#   https URL          -> zip URL; host allowlist only; SHA from same-release neighbor .sha256
-#
-# Flow set matches live setup: omp|claude|opencode|cursor|dsh|all|both
-#   default all includes cursor + dsh; both = omp+claude+opencode (no cursor).
+# Live flavors: omp|opencode|cursor|dsh|all (no claude/codex/both).
+# Modes: full|key|soft|yolo (-Yes => yolo).
 #
 # ASCII-only (PS 5.1 parses .ps1 as cp1251 without a BOM).
 param(
     [switch]$Yes,
     [switch]$SkipSmoke,
-    [string[]]$Install = @(),
-    [ValidateSet('omp','claude','opencode','cursor','dsh','all','both')]
+    [ValidateSet('omp','opencode','cursor','dsh','all')]
     [string]$Flow = 'all',
     [string]$Target = '',
     [switch]$KeepAgents,
+    [ValidateSet('full','key','soft','yolo')]
+    [string]$Mode = '',
+    [switch]$Check,
     [switch]$WhatIf,
     [Alias('h')]
     [switch]$Help
@@ -63,15 +58,16 @@ function Show-Help {
 bootstrap.ps1 - download + verify + setup AI Workflow (Windows)
 
 Usage:
-  bootstrap.ps1 [-Yes] [-SkipSmoke] [-Install <cmds>] [-Flow <flow>]
-                [-Target <dir>] [-KeepAgents] [-WhatIf] [-Help]
+  bootstrap.ps1 [-Yes] [-Mode full|key|soft|yolo] [-SkipSmoke] [-Flow <flow>]
+                [-Target <dir>] [-KeepAgents] [-Check] [-WhatIf] [-Help]
 
-Flow (parity with tools/setup.ps1):
-  omp | claude | opencode | cursor | dsh | all | both
-  default: all  (includes cursor and dsh)
-  both = omp+claude+opencode only (no cursor)
+Flow (live flavors only):
+  omp | opencode | cursor | dsh | all
+  default: all
+  (claude / codex / both retired from installer UX)
 
-Flags are forwarded to tools/setup.ps1 from the extracted install cache.
+Flags are forwarded to: node tools/aiwf.ts setup (from extracted install cache).
+-Yes maps to --mode yolo.
 
 Release pin via env AIWF_RELEASE:
   (empty) | latest     latest GitHub Release assets
@@ -81,7 +77,7 @@ Release pin via env AIWF_RELEASE:
                        SHA from neighbor .sha256 asset (same release)
 
 Lifecycle:
-  download zip+sha256 -> verify SHA-256 -> extract cache -> setup from cache
+  download zip+sha256 -> verify SHA-256 -> extract cache -> node setup from cache
   -> delete cache only on success; on failure retain + print path
   Does not delete existing ~/.aiworkflow. No git-clone install root.
 
@@ -101,198 +97,112 @@ function Test-AllowedHost([string]$HostName) {
     return $false
 }
 
-function Get-NeighborShaUrl([string]$ZipUrl) {
-    if ($ZipUrl -match '\.sha256(\?.*)?$') {
-        throw "AIWF_RELEASE must point at $ZipName, not the .sha256 asset"
-    }
-    if ($ZipUrl -match '\?') {
-        $base = $ZipUrl.Substring(0, $ZipUrl.IndexOf('?'))
-        $qs = $ZipUrl.Substring($ZipUrl.IndexOf('?'))
-        if ($base.EndsWith($ZipName)) { return ($base + '.sha256' + $qs) }
-    } else {
-        if ($ZipUrl.EndsWith($ZipName)) { return ($ZipUrl + '.sha256') }
-    }
-    throw "Pin URL path must name $ZipName (got: $ZipUrl)"
-}
-
-function Resolve-ReleaseUrls {
-    $pin = if ($null -eq $env:AIWF_RELEASE) { '' } else { "$($env:AIWF_RELEASE)".Trim() }
-    if ($pin -eq '' -or $pin -eq 'latest') {
-        $base = "https://github.com/$OwnerRepo/releases/latest/download"
-        return @{
-            Mode    = 'latest'
-            ZipUrl  = "$base/$ZipName"
-            ShaUrl  = "$base/$ShaName"
-            Label   = 'latest'
-        }
-    }
-    if ($pin -match '^[a-zA-Z][a-zA-Z0-9+.-]*://') {
-        if ($pin -notmatch '^https://') {
-            throw "AIWF_RELEASE URL must be https (refused: $pin)"
-        }
-        try {
-            $uri = [Uri]$pin
-        } catch {
-            throw "AIWF_RELEASE is not a valid URL: $pin"
-        }
-        if (-not (Test-AllowedHost $uri.Host)) {
-            throw "AIWF_RELEASE host '$($uri.Host)' not in allowlist ($($AllowedHosts -join ', '))"
-        }
-        if ($uri.AbsolutePath -notmatch [regex]::Escape($ZipName)) {
-            throw "AIWF_RELEASE path must name $ZipName (got: $($uri.AbsolutePath))"
-        }
-        return @{
-            Mode    = 'url'
-            ZipUrl  = $pin
-            ShaUrl  = (Get-NeighborShaUrl $pin)
-            Label   = $pin
-        }
-    }
-    # tag pin (no scheme)
-    if ($pin -match '[\s\\/]') {
-        throw "AIWF_RELEASE tag looks invalid: $pin"
-    }
-    $base = "https://github.com/$OwnerRepo/releases/download/$pin"
-    return @{
-        Mode    = 'tag'
-        ZipUrl  = "$base/$ZipName"
-        ShaUrl  = "$base/$ShaName"
-        Label   = "tag:$pin"
-    }
-}
-
-function Get-CacheRoot {
-    if ($env:LOCALAPPDATA) {
-        return (Join-Path $env:LOCALAPPDATA 'aiwf-install')
-    }
-    if ($env:TEMP) {
-        return (Join-Path $env:TEMP 'aiwf-install')
-    }
-    return (Join-Path $HOME '.cache/aiwf-install')
-}
-
 function Get-Sha256FileLower([string]$Path) {
     $hash = Get-FileHash -LiteralPath $Path -Algorithm SHA256
     return $hash.Hash.ToLowerInvariant()
 }
 
-function Get-PublishedSum([string]$ShaFile) {
-    if (-not (Test-Path -LiteralPath $ShaFile)) {
-        throw "missing sha256 sidecar: $ShaFile"
-    }
-    $raw = (Get-Content -LiteralPath $ShaFile -Raw -ErrorAction Stop)
-    if ($null -eq $raw -or "$raw".Trim() -eq '') {
-        throw "empty sha256 sidecar: $ShaFile"
-    }
-    $line = ("$raw".Trim() -split '\r?\n')[0].Trim()
-    # formats: "<hex>" or "<hex>  filename" or "<hex> *filename"
-    if ($line -match '^([0-9a-fA-F]{64})\b') {
-        return $Matches[1].ToLowerInvariant()
-    }
-    throw "sha256 sidecar is not 64 hex: $ShaFile"
+function Get-PublishedSum([string]$ShaPath) {
+    $line = (Get-Content -LiteralPath $ShaPath -TotalCount 1).Trim()
+    if ($line -match '^([a-fA-F0-9]{64})') { return $Matches[1].ToLowerInvariant() }
+    throw "cannot parse sha256 file: $ShaPath"
 }
 
 function Download-File([string]$Url, [string]$OutPath) {
-    Write-Host "  GET $Url" -ForegroundColor DarkGray
-    # -UseBasicParsing for PS 5.1; follow redirects (GitHub release assets)
+    $uri = [Uri]$Url
+    if ($uri.Scheme -ne 'https') { throw "refusing non-HTTPS URL: $Url" }
+    if (-not (Test-AllowedHost $uri.Host)) { throw "host not allowlisted: $($uri.Host)" }
     Invoke-WebRequest -Uri $Url -OutFile $OutPath -UseBasicParsing
-    if (-not (Test-Path -LiteralPath $OutPath)) {
-        throw "download produced no file: $OutPath"
+}
+
+function Resolve-ReleaseAssets {
+    $pin = if ($env:AIWF_RELEASE) { $env:AIWF_RELEASE.Trim() } else { '' }
+    if ($pin -eq '' -or $pin -eq 'latest') {
+        $api = "https://api.github.com/repos/$OwnerRepo/releases/latest"
+        $rel = Invoke-RestMethod -Uri $api -Headers @{ 'User-Agent' = 'aiworkflow-bootstrap' }
+        $zipAsset = $rel.assets | Where-Object { $_.name -eq $ZipName } | Select-Object -First 1
+        $shaAsset = $rel.assets | Where-Object { $_.name -eq $ShaName } | Select-Object -First 1
+        if (-not $zipAsset -or -not $shaAsset) { throw "latest release missing $ZipName / $ShaName" }
+        return @{ ZipUrl = $zipAsset.browser_download_url; ShaUrl = $shaAsset.browser_download_url; Label = $rel.tag_name }
     }
+    if ($pin -match '^https://') {
+        $zipUrl = $pin
+        $shaUrl = if ($pin -match '\.zip$') { $pin + '.sha256' } else { $pin + '.sha256' }
+        return @{ ZipUrl = $zipUrl; ShaUrl = $shaUrl; Label = 'pin-url' }
+    }
+    $tag = $pin
+    $api = "https://api.github.com/repos/$OwnerRepo/releases/tags/$tag"
+    $rel = Invoke-RestMethod -Uri $api -Headers @{ 'User-Agent' = 'aiworkflow-bootstrap' }
+    $zipAsset = $rel.assets | Where-Object { $_.name -eq $ZipName } | Select-Object -First 1
+    $shaAsset = $rel.assets | Where-Object { $_.name -eq $ShaName } | Select-Object -First 1
+    if (-not $zipAsset -or -not $shaAsset) { throw "release $tag missing $ZipName / $ShaName" }
+    return @{ ZipUrl = $zipAsset.browser_download_url; ShaUrl = $shaAsset.browser_download_url; Label = $tag }
 }
 
 function Find-PayloadRoot([string]$ExtractDir) {
-    $direct = Join-Path $ExtractDir 'tools\setup.ps1'
-    if (Test-Path -LiteralPath $direct) { return $ExtractDir }
-    $kids = @(Get-ChildItem -LiteralPath $ExtractDir -Directory -ErrorAction SilentlyContinue)
-    foreach ($k in $kids) {
-        $cand = Join-Path $k.FullName 'tools\setup.ps1'
-        if (Test-Path -LiteralPath $cand) { return $k.FullName }
+    $marker = Join-Path $ExtractDir 'tools\aiwf.ts'
+    if (Test-Path -LiteralPath $marker) { return $ExtractDir }
+    foreach ($d in Get-ChildItem -LiteralPath $ExtractDir -Directory -ErrorAction SilentlyContinue) {
+        $m = Join-Path $d.FullName 'tools\aiwf.ts'
+        if (Test-Path -LiteralPath $m) { return $d.FullName }
     }
-    throw "extracted zip has no tools/setup.ps1 under $ExtractDir"
+    $legacy = Join-Path $ExtractDir 'tools\setup.ps1'
+    if (Test-Path -LiteralPath $legacy) { return $ExtractDir }
+    throw "extracted zip has no tools/aiwf.ts under $ExtractDir"
 }
 
-# --- resolve pin (always; safe) --------------------------------------------
-try {
-    $rel = Resolve-ReleaseUrls
-} catch {
-    Write-Host "ERROR: $_" -ForegroundColor Red
-    exit 2
-}
-
-$cacheRoot = Get-CacheRoot
-$cacheId   = [guid]::NewGuid().ToString('N').Substring(0, 12)
-$cacheDir  = Join-Path $cacheRoot $cacheId
-$zipPath   = Join-Path $cacheDir $ZipName
-$shaPath   = Join-Path $cacheDir $ShaName
+$cacheRoot = Join-Path $env:TEMP 'aiwf-bootstrap'
+$cacheDir = Join-Path $cacheRoot ([guid]::NewGuid().ToString('N'))
+$zipPath = Join-Path $cacheDir $ZipName
+$shaPath = Join-Path $cacheDir $ShaName
 $extractDir = Join-Path $cacheDir 'extract'
+$stampOk = $false
 
 Write-Host "== AI Workflow bootstrap ==" -ForegroundColor Cyan
-Write-Host "release: $($rel.Label)"
-Write-Host "flow:    $Flow"
-Write-Host "cache:   $cacheDir"
-Write-Host "zip:     $($rel.ZipUrl)"
-Write-Host "sha256:  $($rel.ShaUrl)"
-
-if ($WhatIf) {
-    Write-Host ""
-    Write-Host "WhatIf: would download zip+sha256, verify SHA-256, extract to cache," -ForegroundColor Yellow
-    Write-Host "        run tools/setup.ps1 -Flow $Flow (plus forwarded flags), then" -ForegroundColor Yellow
-    Write-Host "        delete cache only on setup success; retain+print path on failure." -ForegroundColor Yellow
-    Write-Host "        Existing ~/.aiworkflow is never deleted. No git clone." -ForegroundColor Yellow
-    exit 0
-}
-
-# --- download into cache ---------------------------------------------------
-New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
-$stampOk = $false
 try {
+    $rel = Resolve-ReleaseAssets
+    Write-Host ("release: {0}" -f $rel.Label)
+    Write-Host ("zip:     {0}" -f $rel.ZipUrl)
+    Write-Host ("sha:     {0}" -f $rel.ShaUrl)
+    Write-Host ("cache:   {0}" -f $cacheDir)
+
+    if ($WhatIf) {
+        Write-Host "WhatIf: would download, verify, extract, then: node tools/aiwf.ts setup ..." -ForegroundColor Yellow
+        exit 0
+    }
+
+    New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
     Write-Host "== downloading install assets ==" -ForegroundColor Cyan
-    try {
-        Download-File $rel.ZipUrl $zipPath
-        Download-File $rel.ShaUrl $shaPath
-    } catch {
-        Write-Host "ERROR: download failed: $_" -ForegroundColor Red
-        Write-Host "retained cache (partial): $cacheDir" -ForegroundColor Yellow
-        exit 1
-    }
+    Download-File $rel.ZipUrl $zipPath
+    Download-File $rel.ShaUrl $shaPath
 
-    # --- verify BEFORE extract ---------------------------------------------
     Write-Host "== verifying SHA-256 ==" -ForegroundColor Cyan
-    try {
-        $expected = Get-PublishedSum $shaPath
-        $actual = Get-Sha256FileLower $zipPath
-        if ($actual -ne $expected) {
-            throw "SHA-256 mismatch: expected $expected, got $actual"
-        }
-        Write-Host "SHA-256 OK ($actual)"
-    } catch {
-        Write-Host "ERROR: $_" -ForegroundColor Red
-        Write-Host "refusing extract/stamp; retained: $cacheDir" -ForegroundColor Yellow
-        Write-Host "  zip: $zipPath" -ForegroundColor Yellow
-        exit 1
+    $expected = Get-PublishedSum $shaPath
+    $actual = Get-Sha256FileLower $zipPath
+    if ($actual -ne $expected) {
+        throw "SHA-256 mismatch: expected $expected, got $actual"
     }
+    Write-Host "SHA-256 OK ($actual)"
 
-    # --- extract to cache only ---------------------------------------------
     Write-Host "== extracting to cache ==" -ForegroundColor Cyan
     New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
     Expand-Archive -LiteralPath $zipPath -DestinationPath $extractDir -Force
     $payloadRoot = Find-PayloadRoot $extractDir
-    $setupPs1 = Join-Path $payloadRoot 'tools\setup.ps1'
+    $aiwfTs = Join-Path $payloadRoot 'tools\aiwf.ts'
     Write-Host "payload: $payloadRoot"
 
-    # --- run setup from cache ----------------------------------------------
-    Write-Host "== running tools/setup.ps1 from cache ==" -ForegroundColor Cyan
-    $setupArgs = @()
-    if ($Yes)             { $setupArgs += '-Yes' }
-    if ($SkipSmoke)       { $setupArgs += '-SkipSmoke' }
-    if ($Install.Count)   { $setupArgs += '-Install'; $setupArgs += ($Install -join ',') }
-    if ($Flow)            { $setupArgs += '-Flow'; $setupArgs += $Flow }
-    if ($Target)          { $setupArgs += '-Target'; $setupArgs += $Target }
-    if ($KeepAgents)      { $setupArgs += '-KeepAgents' }
+    Write-Host "== running node tools/aiwf.ts setup from cache ==" -ForegroundColor Cyan
+    $nodeArgs = @($aiwfTs, 'setup')
+    if ($Yes) { $nodeArgs += @('--mode', 'yolo') }
+    elseif ($Mode) { $nodeArgs += @('--mode', $Mode) }
+    if ($Check) { $nodeArgs += '--check' }
+    if ($SkipSmoke) { $nodeArgs += '--skip-smoke' }
+    if ($KeepAgents) { $nodeArgs += '--keep-agents' }
+    if ($Flow) { $nodeArgs += @('--flow', $Flow) }
+    if ($Target) { $nodeArgs += @('--target', $Target) }
 
     $global:LASTEXITCODE = 0
-    & powershell -ExecutionPolicy Bypass -File $setupPs1 @setupArgs
+    & node @nodeArgs
     if ($LASTEXITCODE -ne 0) {
         throw "setup exited with code $LASTEXITCODE"
     }
@@ -304,7 +214,6 @@ catch {
     exit 1
 }
 
-# --- delete cache only after success ---------------------------------------
 if ($stampOk) {
     Write-Host "== stamp OK; deleting install cache ==" -ForegroundColor Cyan
     try {
