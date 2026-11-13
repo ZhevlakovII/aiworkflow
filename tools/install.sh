@@ -147,6 +147,15 @@ invoke_aiwf_vendor() {
   fi
 }
 
+# Re-copy harness-protected after tools mirror (--delete / rm-rf wipes dest/tools/).
+invoke_aiwf_vendor_harness() {
+  if [ "$CHECK" -eq 1 ]; then
+    echo "[check] would vendor-harness -> $DEST_ABS/tools/harness-protected.ts"
+  else
+    invoke_install_runtime vendor-harness --repo "$REPO_ABS" --dest "$DEST_ABS"
+  fi
+}
+
 # Dest-shaped shadow: copy src to <root>/<relUnder>/ then rewrite-imports with dest=root.
 new_import_rewritten_shadow() { # $1 srcDir $2 relUnder -> prints shadowRoot
   local srcDir="$1" relUnder="$2" shadowRoot shadowSub parent
@@ -216,6 +225,8 @@ for t in tools hooks; do
     fi
     rm -rf "$shaped_root"
 done
+# Tools mirror may wipe dest/tools/harness-protected.ts — restore after sync.
+invoke_aiwf_vendor_harness
 # Real install: rewrite again on dest (heal prior clone-abs installs).
 if [ "$CHECK" -eq 0 ]; then
   ri_args=(rewrite-imports --dest "$DEST_ABS")

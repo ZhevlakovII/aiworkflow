@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Install the AI Workflow OPENCODE flavor (TS tools + plugins + agents + commands + opencode.json).
 
@@ -141,6 +141,15 @@ function Invoke-AiwfVendor {
     }
 }
 
+# Re-copy harness-protected after tools MIR wipe of dest/tools/.
+function Invoke-AiwfVendorHarness {
+    if ($Check) {
+        Write-Host ("[check] would vendor-harness -> {0}/tools/harness-protected.ts" -f $destFwd)
+    } else {
+        Invoke-InstallRuntime @('vendor-harness', '--repo', $repo, '--dest', $dest)
+    }
+}
+
 function New-ImportRewrittenShadow([string]$srcDir, [string]$relUnder) {
     $shadowRoot = Join-Path $env:TEMP ("aiwf-install-" + [guid]::NewGuid().ToString('N'))
     $shadowSub = Join-Path $shadowRoot $relUnder
@@ -172,6 +181,8 @@ foreach ($t in $oursDirs) {
         Remove-Item -Recurse -Force $shaped.Root -ErrorAction SilentlyContinue
     }
 }
+# Tools MIR may wipe dest/tools/harness-protected.ts — restore after sync.
+Invoke-AiwfVendorHarness
 if (-not $Check) {
     $underArgs = @('rewrite-imports', '--dest', $dest)
     foreach ($t in $oursDirs) {

@@ -200,6 +200,23 @@ if ($doDsh -and -not (Get-Command dsh -ErrorAction SilentlyContinue)) {
     $doDsh = $false
 }
 
+# Soft-skip Cursor when the app/CLI is not detectable (PATH + Windows LocalAppData).
+function Test-CursorPresent {
+    if (Get-Command cursor -ErrorAction SilentlyContinue) { return $true }
+    $la = $env:LOCALAPPDATA
+    if ($la) {
+        $c1 = Join-Path $la 'Programs\cursor\Cursor.exe'
+        $c2 = Join-Path $la 'Programs\Cursor\Cursor.exe'
+        if (Test-Path -LiteralPath $c1) { return $true }
+        if (Test-Path -LiteralPath $c2) { return $true }
+    }
+    return $false
+}
+if ($doCursor -and -not (Test-CursorPresent)) {
+    Write-Host '[skip] Cursor absent - cursor flavor not installed' -ForegroundColor Yellow
+    $doCursor = $false
+}
+
 if (-not $Check) {
     # Abort when none of the four harness CLIs can back a selected flavor (cursor-only is the exception).
     $anyHarness = $doOmp -or $doClaude -or $doOpencode -or $doDsh

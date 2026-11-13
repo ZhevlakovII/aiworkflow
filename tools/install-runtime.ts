@@ -3,6 +3,7 @@
 //
 // Wave A helper only: installers call this later (wave B). Callable from ps1/sh:
 //   node tools/install-runtime.ts vendor --repo <repo> --dest <dest>
+//   node tools/install-runtime.ts vendor-harness --repo <repo> --dest <dest>
 //   node tools/install-runtime.ts rewrite-imports --dest <dest> --under <dir> [--under ...]
 //   node tools/install-runtime.ts rewrite-commands --dest <dest> --file <path> [--file ...] [--clone-root <path>]
 //   node tools/install-runtime.ts smoke
@@ -10,6 +11,7 @@
 // Rules (one for all flavors):
 // 1. Copy core/src into dest/core/src before rewrite (+ core/package.json neighbor),
 //    and tools/harness-protected.ts into dest/tools/harness-protected.ts.
+//    After tools mirror (--delete /MIR /rm-rf), re-call vendor-harness so the helper survives.
 // 2. TS file-relative imports: replace (../)+core/src/ with rel path from that file dir
 //    to dest/core/src/; also (../)+tools/harness-protected.ts -> dest/tools/….
 //    Neighbor ../lib is left alone.
@@ -151,6 +153,23 @@ function replaceAbsPrefix(text: string, fromAbs: string, toAbs: string): string 
 }
 
 /**
+ * (Re)copy tools/harness-protected.ts into dest/tools/. Callable after tools
+ * mirror (--delete /MIR /rm-rf) so the dest-only helper survives wipe.
+ */
+export function vendorHarnessProtected(repoRoot: string, dest: string): string {
+  const repo = path.resolve(repoRoot);
+  const destRoot = path.resolve(dest);
+  const srcHarness = path.join(repo, "tools", "harness-protected.ts");
+  const dstHarness = path.join(destRoot, "tools", "harness-protected.ts");
+  if (!fs.existsSync(srcHarness) || !fs.statSync(srcHarness).isFile()) {
+    throw new Error("vendorHarnessProtected: missing " + HARNESS_PROTECTED_REL + " at " + srcHarness);
+  }
+  fs.mkdirSync(path.dirname(dstHarness), { recursive: true });
+  fs.copyFileSync(srcHarness, dstHarness);
+  return fwdAbs(dstHarness);
+}
+
+/**
  * Copy core/src into dest/core/src plus minimal neighbors (package.json),
  * and tools/harness-protected.ts into dest/tools/harness-protected.ts.
  */
@@ -173,13 +192,7 @@ export function vendorCoreSrc(repoRoot: string, dest: string): VendorResult {
     fs.copyFileSync(from, to);
     neighbors.push(name);
   }
-  const srcHarness = path.join(repo, "tools", "harness-protected.ts");
-  const dstHarness = path.join(destRoot, "tools", "harness-protected.ts");
-  if (!fs.existsSync(srcHarness) || !fs.statSync(srcHarness).isFile()) {
-    throw new Error("vendorCoreSrc: missing " + HARNESS_PROTECTED_REL + " at " + srcHarness);
-  }
-  fs.mkdirSync(path.dirname(dstHarness), { recursive: true });
-  fs.copyFileSync(srcHarness, dstHarness);
+  vendorHarnessProtected(repo, destRoot);
   return {
     destCoreSrc: fwdAbs(dstCore),
     copiedFiles: countFiles(dstCore),
@@ -281,6 +294,7 @@ function usage(): never {
   console.error([
     "usage:",
     "  node tools/install-runtime.ts vendor --repo <repo> --dest <dest>",
+    "  node tools/install-runtime.ts vendor-harness --repo <repo> --dest <dest>",
     "  node tools/install-runtime.ts rewrite-imports --dest <dest> --under <dir> [--under ...]",
     "  node tools/install-runtime.ts rewrite-commands --dest <dest> --file <path> [--file ...] [--clone-root <path>]",
     "  node tools/install-runtime.ts smoke",
@@ -319,6 +333,17 @@ export function runSmoke(): { ok: boolean; lines: string[] } {
     check(
       "vendor wrote dest/tools/harness-protected.ts",
       v.harnessProtected && fs.existsSync(path.join(dest, "tools", "harness-protected.ts")),
+    );
+
+    // Simulate tools mirror wipe (--delete /MIR /rm-rf), then re-vendor harness.
+    const harnessDest = path.join(dest, "tools", "harness-protected.ts");
+    fs.unlinkSync(harnessDest);
+    check("simulated wipe removed harness-protected", !fs.existsSync(harnessDest));
+    const harnessBack = vendorHarnessProtected(repo, dest);
+    check(
+      "vendor-harness restored dest/tools/harness-protected.ts",
+      fs.existsSync(harnessDest) && harnessBack === fwdAbs(harnessDest),
+      harnessBack,
     );
 
     const libDir = path.join(dest, "lib");
@@ -451,6 +476,14 @@ function main(argv: string[]): number {
         (r.neighbors.length ? " (neighbors: " + r.neighbors.join(", ") + ")" : "") +
         (r.harnessProtected ? " + " + HARNESS_PROTECTED_REL : ""),
     );
+    return 0;
+  }
+  if (cmd === "vendor-harness") {
+    const repo = arg("--repo", argv) || defaultRepoRoot();
+    const dest = arg("--dest", argv);
+    if (!dest) usage();
+    const out = vendorHarnessProtected(repo, dest as string);
+    console.error("[vendor-harness] " + HARNESS_PROTECTED_REL + " -> " + out);
     return 0;
   }
   if (cmd === "rewrite-imports") {

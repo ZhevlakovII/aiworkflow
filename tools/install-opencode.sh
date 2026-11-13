@@ -163,6 +163,15 @@ invoke_aiwf_vendor() {
   fi
 }
 
+# Re-copy harness-protected after tools mirror (rm-rf wipes dest/tools/).
+invoke_aiwf_vendor_harness() {
+  if [ "$CHECK" -eq 1 ]; then
+    echo "[check] would vendor-harness -> $DEST_ABS/tools/harness-protected.ts"
+  else
+    invoke_install_runtime vendor-harness --repo "$REPO_ABS" --dest "$DEST_ABS"
+  fi
+}
+
 new_import_rewritten_shadow() {
   local srcDir="$1" relUnder="$2" shadowRoot shadowSub parent
   shadowRoot="$(mktemp -d)"
@@ -254,6 +263,8 @@ stamp_oneshot_agents() {
 
 invoke_aiwf_vendor
 for sub in $OURS_DIRS; do sync_dir_full "$sub"; done
+# Tools mirror may wipe dest/tools/harness-protected.ts — restore after sync.
+invoke_aiwf_vendor_harness
 if [ "$CHECK" -eq 0 ]; then
   ri_args=(rewrite-imports --dest "$DEST_ABS")
   for sub in $OURS_DIRS; do

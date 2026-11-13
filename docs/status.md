@@ -26,6 +26,7 @@
 | Bootstrap curl\|bash stdin stamp (2026-11-12) | setup invoke `</dev/tty` or `</dev/null` so child cannot steal bootstrap pipe; STAMP_OK before cache rm; setup_roles uses /dev/tty when stdin not TTY |
 | PS stderr capture + roles skip (2026-11-12) | Flavor installers: `2>&1` node capture under EAP Continue, throw only on exit≠0 (NativeCommandError fix); setup_roles `s`=keep-current + `--defaults` fills only empty roles |
 | Harness-protected vendor + Enter keep (2026-11-13) | `install-runtime` vendors `tools/harness-protected.ts` + rewrites clone-relative imports under dest; `setup_roles` Enter keeps non-empty modelRoles (even NOT in models.yml); `models.yml.example` xai-oauth stub matches machine-head seed ids |
+| Harness re-vendor + keep harden + Cursor soft-skip (2026-11-13) | After tools mirror, `vendor-harness` restores `dest/tools/harness-protected.ts` (install + install-opencode sh/ps1); smoke wipe+re-vendor; `setup_roles` keep tokens `s/skip/k/keep` + unknown keeps non-empty cur; setup soft-skips Cursor when PATH/app absent |
 
 
 

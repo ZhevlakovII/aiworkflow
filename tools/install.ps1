@@ -159,6 +159,15 @@ function Invoke-AiwfVendor {
     }
 }
 
+# Re-copy harness-protected after tools MIR wipe of dest/tools/.
+function Invoke-AiwfVendorHarness {
+    if ($Check) {
+        Write-Host ("[check] would vendor-harness -> {0}/tools/harness-protected.ts" -f $destFwd)
+    } else {
+        Invoke-InstallRuntime @('vendor-harness', '--repo', $repo, '--dest', $dest)
+    }
+}
+
 # Copy $srcDir into a temp tree at <root>/<relUnder>/ then rewrite-imports with dest=root
 # so (../)+core/src depths match the real dest layout (tools/_lib -> ../../core/src/).
 function New-ImportRewrittenShadow([string]$srcDir, [string]$relUnder) {
@@ -194,6 +203,8 @@ foreach ($t in $trees) {
         Remove-Item -Recurse -Force $shaped.Root -ErrorAction SilentlyContinue
     }
 }
+# Tools MIR may wipe dest/tools/harness-protected.ts — restore after sync.
+Invoke-AiwfVendorHarness
 # Real install: rewrite again on dest so a prior clone-abs install is healed even if MIR skips.
 if (-not $Check) {
     $underArgs = @('rewrite-imports', '--dest', $dest)

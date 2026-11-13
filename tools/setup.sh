@@ -236,6 +236,26 @@ if [ "$DO_DSH" = "1" ] && ! command -v dsh >/dev/null 2>&1; then
     DO_DSH=0
 fi
 
+# Soft-skip Cursor when the app/CLI is not detectable (PATH + Darwin .app + Windows LocalAppData).
+cursor_present() {
+    if command -v cursor >/dev/null 2>&1; then return 0; fi
+    case "$(uname -s 2>/dev/null)" in
+        Darwin)
+            [ -d "/Applications/Cursor.app" ] && return 0
+            ;;
+    esac
+    # Windows / Git-Bash: LocalAppData Programs cursor|Cursor/Cursor.exe
+    if [ -n "${LOCALAPPDATA:-}" ]; then
+        [ -f "$LOCALAPPDATA/Programs/cursor/Cursor.exe" ] && return 0
+        [ -f "$LOCALAPPDATA/Programs/Cursor/Cursor.exe" ] && return 0
+    fi
+    return 1
+}
+if [ "$DO_CURSOR" = "1" ] && ! cursor_present; then
+    echo "[skip] Cursor absent - cursor flavor not installed"
+    DO_CURSOR=0
+fi
+
 if [ "$CHECK" = "0" ]; then
     # Abort when none of the four harness CLIs can back a selected flavor (cursor-only is the exception).
     if [ "$DO_OMP" != "1" ] && [ "$DO_CLAUDE" != "1" ] && [ "$DO_OPENCODE" != "1" ] && [ "$DO_DSH" != "1" ]; then
